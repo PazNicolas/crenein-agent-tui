@@ -1,0 +1,106 @@
+# openspec/config.yaml
+# Spec-Driven Development — CRENEIN Agent TUI
+schema: spec-driven
+
+project: crenein-agent-tui
+persistence: openspec
+strict_tdd: false
+
+context: |
+  Tech stack: Go 1.24+, cobra (CLI subcommands), bubbletea + lipgloss (TUI),
+    go:embed (compose templates), goreleaser (multi-platform builds),
+    GitHub Actions (release pipeline), GitHub Releases (distribution).
+  Purpose: Static multi-platform binary `crenein-agent` that installs, updates,
+    diagnoses and self-maintains the C-Network agent stack (backend Go + MongoDB +
+    InfluxDB 2.7 + Redis + frontend React, all via docker compose) on ~20 client VMs.
+    Replaces install-agent.sh / install-agent-mongo4.sh / update-agent.sh
+    (~700-750 lines each) from the c-network-agent-back repo.
+  Architecture (planned):
+    - internal/engine/   — install, update, backup, rollback, doctor (pure logic, UI-agnostic)
+    - internal/detect/   — AVX, distro, Docker, compose v1/v2, connectivity, disk space
+    - internal/compose/  — embedded docker-compose templates (go:embed)
+    - internal/dockerx/  — wrapper over docker / docker compose CLI
+    - internal/release/  — GitHub Releases API + versions.json manifest client
+    - internal/selfupdate/ — binary download + SHA256 verify + atomic swap
+    - internal/tui/      — bubbletea dashboard, wizards, doctor, logs views
+    Both the TUI and the headless subcommands run the SAME engine.
+  Key domain facts:
+    - MongoDB >= 5.0 requires AVX; CPUs without AVX (detected in /proc/cpuinfo) use mongo:4.4,
+      others use mongodb/mongodb-community-server:7.0-ubuntu2204. Never change Mongo major on update.
+    - Update must not restart databases: docker compose up -d --no-deps --force-recreate agent frontend.
+    - Backups in .backups/${TIMESTAMP}/ (compose, .env, image-state.txt), keep last 5, automatic rollback
+      on failed health check (GET /health on backend, 60s timeout).
+    - Backend image: crenein/c-network-agent-back:{latest,X.Y.Z}; current version 1.8.3 (version.txt).
+    - Distribution: GitHub Releases of PazNicolas/crenein-agent-tui (public repo) with SHA256 checksums,
+      install.sh one-liner installs to /usr/local/bin/crenein-agent.
+    - Sibling repo: c-network-agent-back (needs /health to expose "version" — coordinated change).
+  Conventions:
+    - Engine logic MUST be testable without Docker and without TUI (interfaces + fakes).
+    - All operations accept context.Context as first param.
+    - Headless mode: --yes for non-interactive, --json for machine-readable output.
+    - No secrets in this public repo: credentials are generated at install time into the client's .env.
+
+testing:
+  detected: 2026-06-12
+  strict_tdd: false
+  note: New repo, no code yet. Engine packages must ship with unit tests (no real Docker); TUI tested with teatest.
+  test_runner:
+    available: true
+    framework: go test
+    command: go test ./...
+  layers:
+    unit:
+      available: true
+      tool: testing
+    integration:
+      available: false
+      tool: null
+    e2e:
+      available: false
+      tool: null
+  coverage:
+    available: true
+    command: go test -cover ./...
+  quality_tools:
+    linter:
+      available: true
+      command: go vet ./...
+    type_checker:
+      available: true
+      command: go build ./...
+    formatter:
+      available: true
+      command: gofmt -l .
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes (anything touching client VMs: install, update, self-update)
+    - Identify affected packages (internal/engine, internal/detect, internal/compose, internal/dockerx, internal/release, internal/selfupdate, internal/tui, cmd)
+    - Flag if the change alters files on the client VM (.env, docker-compose.yml, /data/*, certs)
+    - Flag if the change requires coordination with c-network-agent-back (image tags, /health contract, versions.json)
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Reference exact commands, file paths on the client VM, env var names, and image tags
+    - For headless mode, specify exit codes and JSON output shapes explicitly
+  design:
+    - Document architecture decisions with rationale
+    - Keep engine logic UI-agnostic — both TUI and subcommands call the same engine
+    - Specify behavior parity (or intentional divergence) vs the legacy bash scripts
+  tasks:
+    - Group tasks by phase (scaffold, detect, engine, CLI, TUI, tests, release)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+    - Flag tasks that must be validated on a real client-like VM (no AVX, compose v1, poor TERM)
+  apply:
+    - Engine functions must be pure/testable; shell out only through internal/dockerx
+    - Never embed secrets or client data in this public repo
+    - Follow existing patterns: context-first, structured errors with user-facing fix suggestions
+  verify:
+    - Run go build ./... , go vet ./... and gofmt -l .
+    - Run go test ./... for touched packages
+    - Compare implementation against every spec scenario
+    - Verify headless output contracts (exit codes, --json shapes) match specs
+  archive:
+    - Update openspec/specs/ with merged domain specs after archiving
+    - Note coordination needed with c-network-agent-back sibling changes
