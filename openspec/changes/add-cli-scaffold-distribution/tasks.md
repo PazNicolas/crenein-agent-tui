@@ -25,7 +25,7 @@
 
 ## 5. End-to-End Validation
 
-- [ ] 5.1 Open the scaffold PR and confirm `ci.yml` runs and passes on the PR.
+- [x] 5.1 Open the scaffold PR and confirm `ci.yml` runs and passes on the PR. _(PR #1; run 27449946134 success — gofmt/build/vet/test verdes. Nota: warning de deprecación Node 20 en checkout@v4/setup-go@v5, pendiente bump.)_
 - [ ] 5.2 Tag and push `v0.1.0`; confirm `release.yml` publishes a GitHub Release containing exactly `crenein-agent_0.1.0_linux_amd64.tar.gz`, `crenein-agent_0.1.0_linux_arm64.tar.gz`, and `checksums.txt`; confirm a non-tag push to `main` creates no release.
 - [ ] 5.3 [VM] On a clean Ubuntu amd64 VM (client-like, fresh provision): run `curl -sSL https://raw.githubusercontent.com/PazNicolas/crenein-agent-tui/main/install.sh | sudo bash`; verify `/usr/local/bin/crenein-agent` exists with mode `0755`, owner root, and `crenein-agent --version` prints `0.1.0`.
 - [ ] 5.4 [VM] Re-run the one-liner on the same VM to validate idempotency (exit 0, binary replaced); also validate failure paths: without sudo (exit 5) and with a corrupted local checksum test (exit 4, binary untouched).
