@@ -1,0 +1,36 @@
+name: release
+
+# Releases are tag-driven: `git tag v0.1.0 && git push origin v0.1.0` is the
+# entire procedure. Non-tag pushes never reach this workflow.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # goreleaser needs full history (and tags) for the changelog.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          # The ephemeral, repo-scoped token is sufficient to publish a Release
+          # in this same repository. No PAT or org secret is ever used.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

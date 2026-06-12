@@ -1,0 +1,55 @@
+# goreleaser configuration (schema v2) for crenein-agent.
+# Local snapshot:  goreleaser release --snapshot --clean
+# Real release:    triggered by .github/workflows/release.yml on a v* tag.
+version: 2
+
+project_name: crenein-agent
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: crenein-agent
+    main: .
+    binary: crenein-agent
+    # CGO_ENABLED=0 yields a fully static binary that runs on any glibc/musl
+    # Linux used by client VMs, with no shared-library dependencies.
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    # Reproducible builds: pin the binary mtime to the commit timestamp.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: default
+    # Produces crenein-agent_X.Y.Z_linux_amd64.tar.gz (and _arm64). This name
+    # template is a long-term contract shared with install.sh and the future
+    # self-update package — do not change it without updating both.
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats:
+      - tar.gz
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: PazNicolas
+    name: crenein-agent-tui
+
+changelog:
+  use: github
