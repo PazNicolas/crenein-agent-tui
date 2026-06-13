@@ -1,0 +1,49 @@
+{
+  "releases": {
+    "1.8.3": {
+      "date": "2026-06-12",
+      "image": "crenein/c-network-agent-back:1.8.3",
+      "mongo": {
+        "7": "mongodb/mongodb-community-server:7.0-ubuntu2204",
+        "4": "mongo:4.4"
+      },
+      "notes": "Fixes bugs 1&2 Telegram"
+    },
+    "1.8.2": {
+      "date": "2026-05-28",
+      "image": "crenein/c-network-agent-back:1.8.2",
+      "mongo": {
+        "7": "mongodb/mongodb-community-server:7.0-ubuntu2204",
+        "4": "mongo:4.4"
+      },
+      "notes": "anomaly: one notification per cycle"
+    },
+    "1.8.1": {
+      "date": "",
+      "image": "crenein/c-network-agent-back:1.8.1",
+      "mongo": {
+        "7": "mongodb/mongodb-community-server:7.0-ubuntu2204",
+        "4": "mongo:4.4"
+      },
+      "notes": ""
+    },
+    "1.8.0": {
+      "date": "",
+      "image": "crenein/c-network-agent-back:1.8.0",
+      "mongo": {
+        "7": "mongodb/mongodb-community-server:7.0-ubuntu2204",
+        "4": "mongo:4.4"
+      },
+      "notes": ""
+    },
+    "1.6.1": {
+      "date": "",
+      "image": "crenein/c-network-agent-back:1.6.1",
+      "mongo": {
+        "7": "mongodb/mongodb-community-server:7.0-ubuntu2204",
+        "4": "mongo:4.4"
+      },
+      "notes": ""
+    }
+  }
+}
