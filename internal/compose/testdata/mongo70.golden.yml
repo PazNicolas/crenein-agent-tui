@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  agent:
+    image: crenein/c-network-agent-back:latest
+    ports:
+      - "8000:8000"
+      - "8443:8443"
+    env_file:
+      - .env
+    environment:
+      # Server
+      - SERVER_PORT=8000
+      - SERVER_HOST=0.0.0.0
+      - GIN_MODE=release
+
+      # Database (with authentication)
+      - MONGODB_URL=mongodb://${MONGODB_INITDB_ROOT_USERNAME}:${MONGODB_INITDB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
+      - MONGODB_DATABASE=c_network_agent
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
+      - INFLUXDB_ORG=crenein
+      - INFLUXDB_BUCKET_FPING=fping
+      - INFLUXDB_BUCKET_DEVICES=devices
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+
+      # Logging
+      - LOG_LEVEL=warn
+      - LOG_FORMAT=json
+
+      # SNMP Configuration
+      - SNMP_TIMEOUT=30
+      - SNMP_RETRIES=3
+      - SNMP_MAX_PARALLEL=10
+
+      # Asynq Configuration
+      - ASYNQ_CONCURRENCY=40
+      - ASYNQ_QUEUE_DISCOVERY_PRIORITY=5
+      - ASYNQ_QUEUE_POLLER_PRIORITY=4
+      - ASYNQ_QUEUE_CRITICAL_PRIORITY=1
+      - ASYNQ_RETRY_MAX=3
+      - ASYNQ_TASK_TIMEOUT_SECONDS=300
+      - ASYNQ_RETENTION_HOURS=72
+      - ASYNQ_UI_ENABLED=true
+      - ASYNQ_UI_PATH=/tasks
+
+      # Discovery Configuration
+      - DISCOVERY_SNMP_TIMEOUT_SECONDS=30
+      - DISCOVERY_SNMP_RETRIES=2
+      - DISCOVERY_CONCURRENT_DEVICES=5
+      - DISCOVERY_BATCH_SIZE=50
+      - DISCOVERY_CONNECTION_POOL_SIZE=20
+
+      # Poller Configuration
+      - POLLER_SNMP_TIMEOUT_SECONDS=20
+      - POLLER_SNMP_RETRIES=2
+      - POLLER_CONCURRENT_DEVICES=10
+      - POLLER_BATCH_SIZE=100
+      - POLLER_BULK_GET_ENABLED=true
+      - POLLER_MAX_REPETITIONS=25
+
+      # FPing Configuration
+      - FPING_TIMEOUT_SECONDS=60
+      - FPING_PACKET_COUNT=3
+      - FPING_PACKET_SIZE=56
+      - FPING_BATCH_SIZE=100
+      - FPING_WRITE_WORKERS=4
+
+      # Backup Configuration
+      - BACKUP_ENABLE_COMPRESSION=true
+      - BACKUP_UPLOAD_WORKERS=3
+      - DO_SPACE_ENABLED=false
+      - DO_SPACE_REGION=nyc3
+      - D0_SPACE_URL=https://nyc3.digitaloceanspaces.com
+
+      # Worker Configuration
+      - WORKER_POOL_SIZE=10
+      - WORKER_MAX_JOBS=100
+    volumes:
+      - /data/files:/app/files
+      - ./c-network-agent-back/certs:/root/certs:ro
+    depends_on:
+      - mongodb
+      - influxdb
+      - redis
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  frontend:
+    image: crenein/c-network-agent-front:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./c-network-agent-front/certs:/etc/nginx/certs:ro
+    depends_on:
+      - agent
+    restart: unless-stopped
+    networks:
+      - agent-network
+
+  mongodb:
+    image: mongodb/mongodb-community-server:7.0-ubuntu2204
+    # Port NOT exposed externally for security (only accessible within the Docker network)
+    env_file:
+      - .env
+    environment:
+      - MONGODB_INITDB_ROOT_USERNAME=${MONGODB_INITDB_ROOT_USERNAME}
+      - MONGODB_INITDB_ROOT_PASSWORD=${MONGODB_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - agent-network
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7
+    ports:
+      - "8086:8086"
+    env_file:
+      - .env
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword
+      - DOCKER_INFLUXDB_INIT_ORG=crenein
+      - DOCKER_INFLUXDB_INIT_BUCKET=fping
+    volumes:
+      - /data/influxdb2:/var/lib/influxdb2
+    networks:
+      - agent-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Port NOT exposed externally for security (only accessible within the Docker network)
+    env_file:
+      - .env
+    volumes:
+      - redis_data:/data
+    networks:
+      - agent-network
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+
+networks:
+  agent-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+  influxdb_data:
+  redis_data:
