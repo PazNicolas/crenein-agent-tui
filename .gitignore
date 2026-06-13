@@ -17,6 +17,14 @@ coverage.*
 *.coverprofile
 profile.cov
 
+# goreleaser / release artifacts
+dist/
+*.tar.gz
+checksums.txt
+
+# Locally built binary
+/crenein-agent
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
@@ -26,6 +34,9 @@ go.work.sum
 
 # env file
 .env
+
+# Internal planning docs (contain business-sensitive data — not for public repo)
+crenein-agent-tui-plan.md
 
 # Editor/IDE
 # .idea/
