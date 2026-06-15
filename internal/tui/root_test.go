@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PazNicolas/crenein-agent-tui/internal/tui/styles"
@@ -136,8 +137,66 @@ func TestRootModelViewTooSmall(t *testing.T) {
 	if out == "" {
 		t.Fatal("View() returned empty string for small terminal")
 	}
-	// Should contain the "too small" notice.
-	if len(out) < 10 {
-		t.Errorf("View() for small terminal too short: %q", out)
+	// Should contain the "too small" notice with have/need dimensions.
+	if !strings.Contains(out, "Terminal too small") {
+		t.Errorf("View() missing 'Terminal too small': %q", out)
+	}
+	if !strings.Contains(out, "60x20") {
+		t.Errorf("View() missing current dimensions '60x20': %q", out)
+	}
+	if !strings.Contains(out, "80x24") {
+		t.Errorf("View() missing required dimensions '80x24': %q", out)
+	}
+}
+
+func TestRootModelViewTooSmallRecovery(t *testing.T) {
+	// Start with an undersized terminal.
+	m := newTestModel()
+	m.width = 60
+	m.height = 20
+	out := m.View()
+	if !strings.Contains(out, "Terminal too small") {
+		t.Fatalf("expected too-small message, got: %q", out)
+	}
+
+	// Resize to valid dimensions — previous view (Status) should be restored.
+	m2, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	mm := m2.(Model)
+	if mm.width != 80 || mm.height != 24 {
+		t.Errorf("width/height not updated after resize: %dx%d", mm.width, mm.height)
+	}
+	out2 := mm.View()
+	if strings.Contains(out2, "Terminal too small") {
+		t.Errorf("still showing too-small message after resize to 80x24: %q", out2)
+	}
+	// Active view should still be Status.
+	if mm.activeView() != ViewStatus {
+		t.Errorf("after resize, activeView = %v, want ViewStatus", mm.activeView())
+	}
+}
+
+func TestRootModelViewMonoProfile(t *testing.T) {
+	// 7.3: NO_COLOR / mono profile — verify no ANSI color sequences in output
+	// and that status glyphs use text fallbacks.
+	m := newTestModel() // newTestModel already uses mono profile
+	// Navigate through all views and verify mono rendering.
+	views := []ViewID{ViewStatus, ViewInstall, ViewUpdate, ViewDoctor, ViewLogs}
+	viewKeys := []string{"s", "i", "u", "d", "l"}
+	for i, key := range viewKeys {
+		m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		mm := m2.(Model)
+		out := mm.View()
+
+		// Should not contain ANSI escape sequences (color codes).
+		if strings.Contains(out, "\x1b[") {
+			t.Errorf("view %v: output contains ANSI escape sequences in mono mode:\n%s",
+				views[i], out)
+		}
+		// Should not contain raw color emoji glyphs (✅ ⚠️ ❌) in mono mode.
+		for _, forbidden := range []string{"✅", "⚠️", "❌"} {
+			if strings.Contains(out, forbidden) {
+				t.Errorf("view %v: output contains color emoji %q in mono mode", views[i], forbidden)
+			}
+		}
 	}
 }

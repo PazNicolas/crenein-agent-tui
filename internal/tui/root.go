@@ -3,13 +3,16 @@
 package tui
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/PazNicolas/crenein-agent-tui/internal/detect"
 	"github.com/PazNicolas/crenein-agent-tui/internal/dockerx"
 	"github.com/PazNicolas/crenein-agent-tui/internal/engine"
 	"github.com/PazNicolas/crenein-agent-tui/internal/release"
@@ -102,18 +105,51 @@ func NewModelWithStatusDeps(version string, profile styles.Profile, deps status.
 		readFile:  osFSInst.ReadFile,
 		readDir:   osFSInst.ReadDir,
 	})
+	// Wire a real updateView with production manifest client and engine.
+	uv := newUpdateView(version, profile, updateViewDeps{
+		updateFn:       engine.Update,
+		manifestClient: newRealManifestClient(),
+	})
+	// Wire a real doctorView with OS-level deps and the real engine.Run.
+	dv := newDoctorViewReal(profile)
+	// Wire a real logsView with production deps.
+	lv := newLogsViewReal(profile)
 	return Model{
 		version: version,
 		profile: profile,
 		views: map[ViewID]tea.Model{
 			ViewStatus:  sv,
 			ViewInstall: iv,
-			ViewUpdate:  updateView{},
-			ViewDoctor:  doctorView{},
-			ViewLogs:    logsView{},
+			ViewUpdate:  uv,
+			ViewDoctor:  dv,
+			ViewLogs:    lv,
 		},
 		stack: []ViewID{ViewStatus},
 	}
+}
+
+// newLogsViewReal returns a *logsView wired with real production OS-level deps.
+func newLogsViewReal(profile styles.Profile) *logsView {
+	osFS := dockerx.NewOSFS()
+	runner := dockerx.NewOSCommandRunner()
+
+	composeClient := func(ctx context.Context) dockerx.Client {
+		variant := dockerx.ComposeV2
+		if info, err := detect.Compose(ctx, runner); err == nil {
+			variant = info.Variant
+		}
+		return dockerx.NewCLIClient(variant)
+	}
+
+	streamFn := func(ctx context.Context, composeFile, service string, tail int, follow, noColor bool, stdout io.Writer) error {
+		return composeClient(ctx).ComposeLogsStream(ctx, composeFile, service, tail, follow, noColor, stdout)
+	}
+
+	return newLogsView(profile, logsViewDeps{
+		logsStreamFn: streamFn,
+		readFile:     osFS.ReadFile,
+		readDir:      osFS.ReadDir,
+	})
 }
 
 // activeView returns the ID of the topmost view on the stack.

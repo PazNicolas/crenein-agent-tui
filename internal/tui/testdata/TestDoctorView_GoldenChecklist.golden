@@ -1,0 +1,19 @@
+ Doctor — Diagnostics                                           
+                                                                
+ ▶ [OK]  Docker installed                                       
+   [WARN]  .env file permission (600)                           
+   [FAIL]  Disk space (>2 GB free)                              
+   [-]  Agent /health endpoint                                  
+                                                                
+ [FAIL]  1 critical issue(s), 1 warning(s), 1 passed, 1 skipped 
+                                                                
+  ↑/↓ or j/k: select  r: re-run  esc: back                      
+                                                                
+ Detail: Docker installed                                       
+                                                                
+ Status  : [OK] OK                                              
+ Severity: CRITICAL                                             
+                                                                
+ Output:                                                        
+   docker binary found                                          
+                                                                

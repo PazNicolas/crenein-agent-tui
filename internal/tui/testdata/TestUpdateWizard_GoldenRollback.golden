@@ -1,0 +1,11 @@
+ Update Result — Rollback                                    
+                                                             
+ [FAIL] The update failed. Automatic rollback was triggered. 
+                                                             
+   Target version:    1.8.4                                  
+   Backup location:   /opt/crenein/.backups/20260615_120000  
+                                                             
+ [WARN] Rollback completed — previous version restored.      
+   Restored agent image: sha256:old                          
+                                                             
+ Press  esc  or  enter  to return to Status.                 

@@ -208,15 +208,19 @@ func NewModelWithInstallDeps(version string, profile styles.Profile, ideps insta
 	mc := newRealManifestClient()
 	sv := newStatusView(version, profile, d, mc)
 	iv := newInstallView(version, profile, ideps)
+	uv := newUpdateView(version, profile, updateViewDeps{
+		updateFn:       engine.Update,
+		manifestClient: mc,
+	})
 	return Model{
 		version: version,
 		profile: profile,
 		views: map[ViewID]tea.Model{
 			ViewStatus:  sv,
 			ViewInstall: iv,
-			ViewUpdate:  updateView{},
-			ViewDoctor:  doctorView{},
-			ViewLogs:    logsView{},
+			ViewUpdate:  uv,
+			ViewDoctor:  newDoctorViewReal(profile),
+			ViewLogs:    newLogsViewReal(profile),
 		},
 		stack: []ViewID{ViewStatus},
 	}

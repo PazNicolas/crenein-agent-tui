@@ -25,37 +25,37 @@
 
 ## 4. Update Wizard View
 
-- [ ] 4.1 Implement the version preview screen: current → available version with release notes from the manifest; handle already-up-to-date and manifest-unavailable states.
-- [ ] 4.2 Implement explicit confirmation listing what will and will not be touched (databases are not restarted).
-- [ ] 4.3 Implement live progress for backup → pull → recreate → health, driven by engine events.
-- [ ] 4.4 Implement the result screen: success summary, or failure with the automatic rollback steps and their outcome visible.
+- [x] 4.1 Implement the version preview screen: current → available version with release notes from the manifest; handle already-up-to-date and manifest-unavailable states.
+- [x] 4.2 Implement explicit confirmation listing what will and will not be touched (databases are not restarted).
+- [x] 4.3 Implement live progress for backup → pull → recreate → health, driven by engine events.
+- [x] 4.4 Implement the result screen: success summary, or failure with the automatic rollback steps and their outcome visible.
 
 ## 5. Doctor View
 
-- [ ] 5.1 Implement the live check list: each engine doctor check renders pending → running → ✅/⚠️/❌ as events arrive, with a final summary line.
-- [ ] 5.2 Implement check selection: detail pane with the check output and its fix suggestion.
-- [ ] 5.3 Implement re-run (`r`) restarting the full doctor run and resetting states.
+- [x] 5.1 Implement the live check list: each engine doctor check renders pending → running → ✅/⚠️/❌ as events arrive, with a final summary line.
+- [x] 5.2 Implement check selection: detail pane with the check output and its fix suggestion.
+- [x] 5.3 Implement re-run (`r`) restarting the full doctor run and resetting states.
 
 ## 6. Logs View
 
-- [ ] 6.1 Implement live follow of compose logs through the same engine/dockerx streaming call as `crenein-agent logs`, rendered in a viewport.
-- [ ] 6.2 Implement service filter cycling (all → agent → frontend → mongodb → influxdb → redis).
-- [ ] 6.3 Implement pause/resume (`space`) with scrollback while paused and auto-follow on resume.
-- [ ] 6.4 Implement configurable tail size and buffer cap so memory stays bounded.
+- [x] 6.1 Implement live follow of compose logs through the same engine/dockerx streaming call as `crenein-agent logs`, rendered in a viewport.
+- [x] 6.2 Implement service filter cycling (all → agent → frontend → mongodb → influxdb → redis).
+- [x] 6.3 Implement pause/resume (`space`) with scrollback while paused and auto-follow on resume.
+- [x] 6.4 Implement configurable tail size and buffer cap so memory stays bounded.
 
 ## 7. Degradation And Resilience
 
-- [ ] 7.1 Implement the pre-start gate: non-TTY or `TERM=dumb`/empty prints the headless-subcommand notice and exits `0` without starting bubbletea.
-- [ ] 7.2 Implement the "terminal too small" screen for sizes under 80x24, recovering on resize.
-- [ ] 7.3 Verify `NO_COLOR` and ASCII color profiles render monochrome with text fallbacks across all five views.
+- [x] 7.1 Implement the pre-start gate: non-TTY or `TERM=dumb`/empty prints the headless-subcommand notice and exits `0` without starting bubbletea.
+- [x] 7.2 Implement the "terminal too small" screen for sizes under 80x24, recovering on resize.
+- [x] 7.3 Verify `NO_COLOR` and ASCII color profiles render monochrome with text fallbacks across all five views.
 - [ ] 7.4 Validate manually on client-like terminals: xterm over SSH, `screen`, a cloud web console, and a no-AVX VM. **[requires real client-like VM]**
 
 ## 8. Tests (teatest)
 
 - [x] 8.1 Status view: golden file at 80x24 (installed and not-installed states) plus indicator states via fake release client.
 - [x] 8.2 Install wizard: simulated full run with the fake engine (checks → form → preview → execution → summary) and the existing-installation guard.
-- [ ] 8.3 Update wizard: simulated success run and simulated health-check failure showing rollback.
-- [ ] 8.4 Doctor view: scripted check sequence with a warning and a failure; selection detail; re-run.
-- [ ] 8.5 Logs view: scripted log stream; filter, pause/scroll, resume.
+- [x] 8.3 Update wizard: simulated success run and simulated health-check failure showing rollback.
+- [x] 8.4 Doctor view: scripted check sequence with a warning and a failure; selection detail; re-run.
+- [x] 8.5 Logs view: scripted log stream; filter, pause/scroll, resume.
 - [ ] 8.6 Navigation and degradation: global keys, quit confirmation during a running operation, too-small screen, no-color goldens.
 - [ ] 8.7 Run `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`.

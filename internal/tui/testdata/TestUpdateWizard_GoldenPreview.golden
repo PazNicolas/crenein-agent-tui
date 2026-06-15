@@ -1,0 +1,21 @@
+ Update Wizard — Version Preview                                                    
+                                                                                    
+   1.8.3  →  1.8.4                                                                  
+                                                                                    
+ Release notes:                                                                     
+   New dashboard features and security patches.                                     
+                                                                                    
+ What will be updated:                                                              
+   [OK]  agent  (crenein/c-network-agent-back:1.8.4)                                
+   [OK]  frontend  (crenein/c-network-agent-front:1.8.4)                            
+                                                                                    
+ What will NOT be touched:                                                          
+   —  mongodb  (database image unchanged)                                           
+   —  influxdb                                                                      
+   —  redis                                                                         
+   —  /data/*  (all persistent data is preserved)                                   
+                                                                                    
+ A backup of docker-compose.yml, .env, and image IDs will be created before update. 
+                                                                                    
+ Press  enter  or  y  to confirm and begin the update.                              
+ Press  esc  to cancel.                                                             
