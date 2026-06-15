@@ -53,15 +53,15 @@
 
 ## 8. Integration Tests (bash + jq)
 
-- [ ] 8.1 Create `test/integration/` harness: build the binary, run scripted invocations with stdin from `/dev/null`, capture stdout/stderr separately, assert exit codes.
-- [ ] 8.2 Contract tests without Docker: usage errors (64), `update --dry-run`, missing-input failures for `install`/`update`/`rollback` without TTY, `--quiet` behavior, no-hang guarantee (timeout wrapper).
-- [ ] 8.3 JSON shape tests with `jq -e`: `doctor --json` and `status --json` schema_version, enum membership, and all documented fields/types.
-- [ ] 8.4 Full-stack tests (marked, Docker required): install + status + doctor + logs + update + rollback round-trip on a disposable VM. [VALIDATE ON CLIENT-LIKE VM: no AVX, compose v1, poor TERM]
-- [ ] 8.5 Wire contract tests (8.2-8.3) into CI; document how to run the full-stack suite manually.
+- [x] 8.1 Create `test/integration/` harness: build the binary, run scripted invocations with stdin from `/dev/null`, capture stdout/stderr separately, assert exit codes.
+- [x] 8.2 Contract tests without Docker: usage errors (64), `update --dry-run`, missing-input failures for `install`/`update`/`rollback` without TTY, `--quiet` behavior, no-hang guarantee (timeout wrapper).
+- [x] 8.3 JSON shape tests with `jq -e`: `doctor --json` and `status --json` schema_version, enum membership, and all documented fields/types.
+- [ ] 8.4 Full-stack tests (marked, Docker required): install + status + doctor + logs + update + rollback round-trip on a disposable VM. [VALIDATE ON CLIENT-LIKE VM: no AVX, compose v1, poor TERM] — script written at `test/integration/full_stack.sh`; NOT executed; pending manual validation on VM by operator.
+- [x] 8.5 Wire contract tests (8.2-8.3) into CI; document how to run the full-stack suite manually.
 
 ## 9. Validation And Documentation
 
-- [ ] 9.1 Run `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`.
-- [ ] 9.2 Verify every spec scenario in `specs/headless-cli/spec.md` against the implementation, especially the exit code table and JSON field contracts.
-- [ ] 9.3 Update the repo README with the subcommand reference: flags, exit codes per command, JSON shapes, and automation examples (`cron`, `jq`).
+- [x] 9.1 Run `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`.
+- [x] 9.2 Verify every spec scenario in `specs/headless-cli/spec.md` against the implementation, especially the exit code table and JSON field contracts. See discrepancies reported in the §8-9 close-out result.
+- [x] 9.3 Update the repo README with the subcommand reference: flags, exit codes per command, JSON shapes, and automation examples (`cron`, `jq`).
 - [ ] 9.4 Manually exercise the plain interactive install prompts and the update confirmation on a real terminal. [VALIDATE ON CLIENT-LIKE VM: no AVX, compose v1, poor TERM]

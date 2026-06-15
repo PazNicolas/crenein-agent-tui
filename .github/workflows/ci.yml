@@ -35,3 +35,14 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      - name: Integration contract tests (§8.2-8.3)
+        # ubuntu-latest has bash 5+ and jq pre-installed.
+        # Builds the binary once to test/integration/bin/crenein-agent,
+        # then runs contract tests (no Docker required).
+        #
+        # To run the full-stack suite manually on a client-like VM (Docker required):
+        #   sudo bash test/integration/full_stack.sh
+        # Or with a pre-built binary:
+        #   BIN=/usr/local/bin/crenein-agent sudo bash test/integration/full_stack.sh
+        run: bash test/integration/run_contract_tests.sh

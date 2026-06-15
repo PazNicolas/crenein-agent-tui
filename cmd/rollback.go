@@ -35,6 +35,12 @@ type rollbackDeps struct {
 	stdin *bufio.Reader
 	// installDir overrides install-dir detection (for tests).
 	installDir string
+	// readFile overrides filesystem reads during install-dir detection (for tests).
+	// When nil, the real OS filesystem is used.
+	readFile func(name string) ([]byte, error)
+	// readDir overrides directory listing during install-dir detection (for tests).
+	// When nil, the real OS filesystem is used.
+	readDir func(path string) ([]string, error)
 }
 
 // newRollbackCmd constructs the `rollback` subcommand wired to real deps.
@@ -80,35 +86,6 @@ Exit codes:
 	return cmd
 }
 
-// resolveRollbackInstallDir replicates the pattern from resolveStatusInstallDir.
-// Returns "" when not found.
-func resolveRollbackInstallDir(deps rollbackDeps, fs dockerx.FS) string {
-	if deps.installDir != "" {
-		return deps.installDir
-	}
-
-	candidates := []string{"."}
-	candidates = append(candidates, "/root")
-	if entries, err := fs.ReadDir("/home"); err == nil {
-		for _, entry := range entries {
-			candidates = append(candidates, "/home/"+entry)
-		}
-	}
-
-	for _, dir := range candidates {
-		data, err := fs.ReadFile(dir + "/docker-compose.yml")
-		if err != nil {
-			continue
-		}
-		content := string(data)
-		if strings.Contains(content, "crenein/c-network-agent-back") ||
-			strings.Contains(content, "c-network-agent-back") {
-			return dir
-		}
-	}
-	return ""
-}
-
 func runRollback(
 	ctx context.Context,
 	cmd *cobra.Command,
@@ -123,7 +100,17 @@ func runRollback(
 	fs := dockerx.NewOSFS()
 
 	// ── Resolve install dir ───────────────────────────────────────────────────
-	installDir := resolveRollbackInstallDir(deps, fs)
+	// readFile/readDir are injectable so the resolution is hermetic in tests
+	// (no real filesystem dependency). They default to the OS filesystem.
+	readFile := deps.readFile
+	if readFile == nil {
+		readFile = fs.ReadFile
+	}
+	readDir := deps.readDir
+	if readDir == nil {
+		readDir = fs.ReadDir
+	}
+	installDir := resolveInstallDir(readFile, readDir, deps.installDir)
 	if installDir == "" {
 		WriteError(stderr, "no CRENEIN installation found (no docker-compose.yml referencing crenein/c-network-agent-back in . or /root or /home/*/)\n")
 		WriteError(stderr, "hint: run `crenein-agent install` to set up the agent stack\n")

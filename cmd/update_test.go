@@ -310,6 +310,7 @@ func TestUpdate_RolledBack_Exit5(t *testing.T) {
 
 	cleanup := updateTestSetup(&engine.UpdateResult{
 		RolledBack: true,
+		BackupPath: "/install/.backups/20260614_120000",
 	}, engineErr, nil)
 	defer cleanup()
 
@@ -328,6 +329,10 @@ func TestUpdate_RolledBack_Exit5(t *testing.T) {
 	}
 	if !strings.Contains(res.stderr, "rolled back") {
 		t.Errorf("stderr should mention rollback, got: %q", res.stderr)
+	}
+	// Spec: on exit 5, stderr MUST state which backup was used.
+	if !strings.Contains(res.stderr, "/install/.backups/20260614_120000") {
+		t.Errorf("stderr should state the backup path used, got: %q", res.stderr)
 	}
 }
 

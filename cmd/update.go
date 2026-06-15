@@ -218,6 +218,9 @@ func runAgentUpdate(
 			return rollbackFailedError(fmt.Errorf("rollback failed"))
 		}
 		WriteError(stderr, "error: update failed — rolled back to previous version\n")
+		if res.BackupPath != "" {
+			WriteError(stderr, "  backup: %s\n", res.BackupPath)
+		}
 		if engErr != nil {
 			WriteError(stderr, "  cause: %v\n", engErr)
 			return rolledBackError(engErr)
@@ -264,6 +267,15 @@ func resolveUpdateVersion(
 	// Detect current running version (best-effort; may be "unknown").
 	currentVersion = mc.DetectAgentVersion(ctx)
 
+	// Validate --version format BEFORE any network I/O: a malformed pin is a
+	// usage error (exit 64) regardless of whether the manifest is reachable.
+	if pinVersion != "" {
+		if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, pinVersion); !matched {
+			fmt.Fprintf(stderr, "error: --version requires an X.Y.Z value (got %q)\n", pinVersion)
+			return "", "", currentVersion, usageError("--version requires an X.Y.Z value")
+		}
+	}
+
 	// Try to fetch the manifest.
 	m, fetchErr := mc.FetchManifest(ctx, false)
 	if fetchErr != nil {
@@ -279,11 +291,7 @@ func resolveUpdateVersion(
 	}
 
 	if pinVersion != "" {
-		// Validate format before lookup: must be X.Y.Z.
-		if matched, _ := regexp.MatchString(`^\d+\.\d+\.\d+$`, pinVersion); !matched {
-			return "", "", currentVersion, usageError("--version requires an X.Y.Z value")
-		}
-		// Validate pin against manifest.
+		// Format already validated above; now validate against the manifest.
 		resolved, verr := release.ResolveAgentVersion(m, pinVersion)
 		if verr != nil {
 			// List available versions on stderr.

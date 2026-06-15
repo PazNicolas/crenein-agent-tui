@@ -48,38 +48,6 @@ type statusDeps struct {
 	now func() time.Time
 }
 
-// ─── Install-dir detection ────────────────────────────────────────────────────
-
-// resolveStatusInstallDir searches CWD, /root, and /home/*/ for a
-// docker-compose.yml that references the agent image. Returns "" when not found.
-// If deps.installDir is non-empty it is returned directly (test override).
-func resolveStatusInstallDir(deps statusDeps) string {
-	if deps.installDir != "" {
-		return deps.installDir
-	}
-
-	candidates := []string{"."}
-	candidates = append(candidates, "/root")
-	if entries, err := deps.readDir("/home"); err == nil {
-		for _, entry := range entries {
-			candidates = append(candidates, "/home/"+entry)
-		}
-	}
-
-	for _, dir := range candidates {
-		data, err := deps.readFile(dir + "/docker-compose.yml")
-		if err != nil {
-			continue
-		}
-		content := string(data)
-		if strings.Contains(content, "crenein/c-network-agent-back") ||
-			strings.Contains(content, "c-network-agent-back") {
-			return dir
-		}
-	}
-	return ""
-}
-
 // ─── Compose-file image tag extraction ────────────────────────────────────────
 
 // imageTagFromCompose parses a docker-compose.yml for the `image:` value of the
@@ -604,7 +572,7 @@ func runStatus(
 	stdout := cmd.OutOrStdout()
 
 	// Detect install dir.
-	installDir := resolveStatusInstallDir(deps)
+	installDir := resolveInstallDir(deps.readFile, deps.readDir, deps.installDir)
 	if installDir == "" {
 		WriteError(stderr, "no CRENEIN installation found (no docker-compose.yml referencing crenein/c-network-agent-back in . or /root or /home/*/)\n")
 		WriteError(stderr, "hint: run `crenein-agent install` to set up the agent stack\n")

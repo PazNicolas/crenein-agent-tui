@@ -81,12 +81,17 @@ func newInstallCmdWithDeps(deps installDeps) *cobra.Command {
 
 // installInputDefs defines the stable order of promptable install inputs.
 // The Default field is the fallback used by --yes and TTY prompts (empty input).
+//
+// NOTE: the "Installation directory" Default is intentionally left empty here.
+// It must be resolved at call-time (in runInstall) via cwdDefault() rather than
+// at package init, so it reflects the process's working directory when the
+// command actually runs — not the directory captured when the binary loaded.
 var installInputDefs = []InputDef{
 	{
 		Label:   "Installation directory",
 		Flag:    "dir",
 		EnvVar:  "CRENEIN_INSTALL_DIR",
-		Default: cwdDefault(),
+		Default: "",
 		Secret:  false,
 	},
 	{
@@ -148,7 +153,19 @@ func runInstall(
 	// confirmation prompt read from the same position in the stream.
 	stdinR := bufio.NewReader(cmd.InOrStdin())
 
-	// Build flag values slice matching installInputDefs order.
+	// Resolve the install-input defs at call-time. The "Installation directory"
+	// default is the current working directory resolved NOW (not at package init),
+	// so it reflects where the command is actually invoked. The stable order is
+	// preserved (a copy is taken; the package-level var is not mutated).
+	inputDefs := make([]InputDef, len(installInputDefs))
+	copy(inputDefs, installInputDefs)
+	for i := range inputDefs {
+		if inputDefs[i].Flag == "dir" {
+			inputDefs[i].Default = cwdDefault()
+		}
+	}
+
+	// Build flag values slice matching inputDefs order.
 	flagValues := []string{
 		flagDir,
 		flagMongo,
@@ -172,8 +189,8 @@ func runInstall(
 	// With --yes: apply flag > env > default for each input, no prompts.
 	var resolved []string
 	if flagYes {
-		resolved = make([]string, len(installInputDefs))
-		for i, def := range installInputDefs {
+		resolved = make([]string, len(inputDefs))
+		for i, def := range inputDefs {
 			fv := flagValues[i]
 			if fv != "" {
 				resolved[i] = fv
@@ -198,14 +215,17 @@ func runInstall(
 		}
 
 		var err error
-		resolved, err = ResolveAll(flagValues, installInputDefs, rdeps)
+		resolved, err = ResolveAll(flagValues, inputDefs, rdeps)
 		if err != nil {
+			// Surface the missing-input message (flags + CRENEIN_* env vars) on
+			// stderr; cobra's own error printing is silenced for this command.
+			WriteError(stderr, "%v\n", err)
 			return err
 		}
 
 		// Show resolved-values summary with secrets masked.
 		fmt.Fprintln(stderr, "\nInstallation summary:")
-		for i, def := range installInputDefs {
+		for i, def := range inputDefs {
 			val := resolved[i]
 			if def.Secret {
 				val = "****"

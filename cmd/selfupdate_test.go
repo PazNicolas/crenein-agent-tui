@@ -291,6 +291,62 @@ func TestSelfUpdate_NoTTY_WithoutYes(t *testing.T) {
 	}
 }
 
+// ─── Tests: interactive confirmation (TTY overrides) ──────────────────────────
+
+// TestSelfUpdate_Interactive_Accept verifies that, with simulated TTYs and no
+// --yes, answering "y" at the prompt proceeds with the update (exit 0).
+func TestSelfUpdate_Interactive_Accept(t *testing.T) {
+	m := testManifest("0.2.0", "Bug fixes")
+	deps := selfUpdateDeps{
+		manifestClient: &fakeManifestClient{manifest: m},
+		updater: &fakePerformer{
+			result: &selfupdate.Result{
+				Action:      "updated",
+				FromVersion: "0.1.0",
+				ToVersion:   "0.2.0",
+			},
+		},
+		// Simulate an interactive environment via the TTY overrides.
+		stdinIsTTY:  boolPtr(true),
+		stderrIsTTY: boolPtr(true),
+		stdin:       strings.NewReader("y\n"),
+	}
+	res := runSelfUpdateCmd(t, []string{}, deps, "0.1.0")
+	if res.exitCode != 0 {
+		t.Errorf("exit code = %d, want 0; stderr: %q", res.exitCode, res.stderr)
+	}
+	if !strings.Contains(res.stdout, "updated") {
+		t.Errorf("stdout should contain 'updated', got: %q", res.stdout)
+	}
+	// The confirmation preview is written to stderr.
+	if !strings.Contains(res.stderr, "Proceed?") {
+		t.Errorf("stderr should contain the confirmation prompt, got: %q", res.stderr)
+	}
+}
+
+// TestSelfUpdate_Interactive_Decline verifies that, with simulated TTYs and no
+// --yes, answering "n" aborts without performing the update (exit 0, "Aborted").
+func TestSelfUpdate_Interactive_Decline(t *testing.T) {
+	m := testManifest("0.2.0", "Bug fixes")
+	// A performer that fails the test if invoked: declining must not call Update.
+	deps := selfUpdateDeps{
+		manifestClient: &fakeManifestClient{manifest: m},
+		updater: &fakePerformer{
+			err: errors.New("Update must not be called when the user declines"),
+		},
+		stdinIsTTY:  boolPtr(true),
+		stderrIsTTY: boolPtr(true),
+		stdin:       strings.NewReader("n\n"),
+	}
+	res := runSelfUpdateCmd(t, []string{}, deps, "0.1.0")
+	if res.exitCode != 0 {
+		t.Errorf("exit code = %d, want 0 (declined is not an error); stderr: %q", res.exitCode, res.stderr)
+	}
+	if !strings.Contains(res.stderr, "Aborted") {
+		t.Errorf("stderr should mention 'Aborted', got: %q", res.stderr)
+	}
+}
+
 // ─── Tests: downgrade with --version ─────────────────────────────────────────
 
 func TestSelfUpdate_Downgrade(t *testing.T) {

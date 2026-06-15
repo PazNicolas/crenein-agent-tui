@@ -46,6 +46,13 @@ type selfUpdateDeps struct {
 	// Used in tests to simulate non-interactive environments.
 	noTTYOverride bool
 
+	// stdinIsTTY overrides stdin TTY detection (for tests). When non-nil it takes
+	// precedence over DetectTTY(), allowing tests to simulate an interactive TTY.
+	stdinIsTTY *bool
+	// stderrIsTTY overrides stderr TTY detection (for tests). When non-nil it
+	// takes precedence over DetectTTY().
+	stderrIsTTY *bool
+
 	// stdin overrides the reader used for interactive confirmation.
 	// When nil, cmd.InOrStdin() is used.
 	stdin io.Reader
@@ -149,7 +156,8 @@ func runSelfUpdate(ctx context.Context, cmd *cobra.Command, deps selfUpdateDeps,
 
 	// ── update / downgrade mode ───────────────────────────────────────────────
 	noTTY := deps.noTTYOverride
-	return runUpdate(ctx, cmd, mc, performer, currentVersion, pinVersion, yes, noTTY, deps.stdin)
+	return runUpdate(ctx, cmd, mc, performer, currentVersion, pinVersion, yes, noTTY,
+		deps.stdinIsTTY, deps.stderrIsTTY, deps.stdin)
 }
 
 // runCheck implements --check: no filesystem modifications, exits 0/10/1.
@@ -184,6 +192,7 @@ func runUpdate(
 	currentVersion, pinVersion string,
 	yes bool,
 	noTTY bool,
+	stdinIsTTYOverride, stderrIsTTYOverride *bool,
 	stdinOverride io.Reader,
 ) error {
 
@@ -219,8 +228,18 @@ func runUpdate(
 	// ── interactive confirmation ──────────────────────────────────────────────
 	if !yes {
 		// Require both stdin and stderr to be TTYs (consistent with install/update/rollback).
+		// Overrides (when set) take precedence over DetectTTY(), letting tests
+		// simulate either a non-interactive environment or a real interactive TTY.
 		ttyState := DetectTTY()
-		tty := !noTTY && ttyState.StdinIsTTY && ttyState.StderrIsTTY
+		stdinIsTTY := ttyState.StdinIsTTY
+		stderrIsTTY := ttyState.StderrIsTTY
+		if stdinIsTTYOverride != nil {
+			stdinIsTTY = *stdinIsTTYOverride
+		}
+		if stderrIsTTYOverride != nil {
+			stderrIsTTY = *stderrIsTTYOverride
+		}
+		tty := !noTTY && stdinIsTTY && stderrIsTTY
 		if !tty {
 			fmt.Fprintln(cmd.ErrOrStderr(), "error: no TTY detected and --yes not set; pass --yes to confirm non-interactively")
 			return usageError("no TTY and --yes not set")

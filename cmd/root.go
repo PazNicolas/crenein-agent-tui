@@ -35,7 +35,10 @@ func newRootCmd() *cobra.Command {
 
 	// Unknown or malformed flags → exit 64 (EX_USAGE) instead of exit 1.
 	// SetFlagErrorFunc is inherited by all subcommands when cobra propagates it.
-	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+	root.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		// cobra's own error printing is silenced (SilenceErrors); surface the
+		// flag error (which names the offending flag) on stderr ourselves.
+		c.PrintErrln("error:", err.Error())
 		return usageError(err.Error())
 	})
 

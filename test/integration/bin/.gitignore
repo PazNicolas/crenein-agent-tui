@@ -1,0 +1,3 @@
+# Compiled test binaries — built on demand by run_contract_tests.sh
+*
+!.gitignore

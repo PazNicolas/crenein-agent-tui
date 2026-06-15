@@ -3,7 +3,6 @@ package release
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -103,8 +102,13 @@ func (mc *ManifestClient) detectFromDocker(ctx context.Context) string {
 			if strings.HasPrefix(tag, imagePrefix) {
 				suffix := strings.TrimPrefix(tag, imagePrefix)
 				if suffix == "latest" {
-					// Report digest; semantic version is unknown.
-					return fmt.Sprintf("unknown (digest %s)", info.ID)
+					// The :latest tag carries no semantic version, so the agent
+					// version is indeterminable. The spec requires the value to be
+					// exactly "unknown" (not "unknown (digest ...)") so downstream
+					// consumers — e.g. status.agent.version and ComputeUpdateInfo —
+					// classify it consistently. The digest is intentionally NOT
+					// embedded in the version value.
+					return unknownVersion
 				}
 				if validSemver(suffix) {
 					return suffix

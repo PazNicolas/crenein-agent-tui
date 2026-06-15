@@ -136,54 +136,32 @@ func TestRollbackCmd_List_NoBackups_Exit3(t *testing.T) {
 }
 
 // TestRollbackCmd_NoInstall_Exit3 verifies that a missing install returns exit 3.
+//
+// The resolution is made hermetic by injecting readFile/readDir that always
+// report "no file / empty dir", so resolveInstallDir returns "" regardless of
+// the host filesystem. This forces the no-installation preflight path
+// deterministically.
 func TestRollbackCmd_NoInstall_Exit3(t *testing.T) {
 	cleanup := rollbackTestSetup(nil, nil, nil, nil)
 	defer cleanup()
 
-	// installDir = "" → resolveRollbackInstallDir will find nothing (empty deps).
-	// We rely on the fake fs returning no files, but since we override installDir
-	// via deps.installDir, we leave it as "" to trigger the not-found path.
-	deps := rollbackDeps{installDir: ""}
-	// Also patch listBackupsFn to avoid it being called (install check happens first).
-	// We do NOT set installDir, so resolveRollbackInstallDir returns "".
-	// But in this test the real fs is used. We set installDir to a sentinel that
-	// makes the compose-file search fail trivially.
-	// Simplest: set a non-existent dir path — then ReadFile("__NOEXIST__/docker-compose.yml")
-	// will fail, leaving installDir empty.
-	// Since the real FS is used, we need installDir to be empty.
-	// rollbackDeps.installDir="" → resolveRollbackInstallDir checks ".","root","/home/*".
-	// On a real machine this will either find an install or not. To make it deterministic,
-	// we can't use the real FS here. Instead inject a known installDir that is impossible.
-	// The cleanest approach: set installDir to a path that won't have a compose file.
-	// But since rollbackDeps.installDir overrides the search, set to a real temp-like value
-	// that won't exist:
-	// Actually we need installDir="" to go through the resolution logic.
-	// The test is: no TTY, no install → exit 3.
-	// We cheat by using the injected installDir and making listBackupsFn return no install error.
-	// Re-do: provide installDir="" which forces real FS lookup; on CI there's no install.
-	// This is fragile. Better: the command checks installDir first; fake it with a sentinal.
-	// Use deps.installDir = "__nonexistent__" — which won't match any compose file search
-	// because the override returns it directly, and the downstream listBackupsFn fake
-	// will be called with that dir. The no-install exit-3 is triggered by installDir="".
-	//
-	// Actually the simplest test: installDir="" in deps, real FS. On CI no install exists.
-	// But on a dev machine with the agent installed this could fail.
-	//
-	// The most reliable: intercept the resolveRollbackInstallDir path is not injectable.
-	// So we'll set installDir to a clearly nonexistent path, then the command will
-	// NOT return exit 3 (it found "an install dir") but will call listBackupsFn.
-	//
-	// Correct approach: set installDir="" so resolveRollbackInstallDir searches real FS.
-	// Since we're in a test environment without a compose file in the right places, it
-	// returns "" and we get exit 3. Accept this as best-effort.
-	deps = rollbackDeps{installDir: ""}
+	deps := rollbackDeps{
+		installDir: "", // force resolution via injected readFile/readDir
+		readFile: func(string) ([]byte, error) {
+			return nil, errors.New("no such file")
+		},
+		readDir: func(string) ([]string, error) {
+			return nil, errors.New("no such directory")
+		},
+	}
 
 	res := runRollbackCmd(t, []string{"--yes"}, deps)
 	if res.exitCode != ExitPreflight {
-		// On a machine with an actual install this test may not get exit 3.
-		// Mark as skippable in that case.
-		t.Logf("exit code = %d (expected %d on a machine without install); stderr: %s",
+		t.Fatalf("exit code = %d, want %d (no installation); stderr: %s",
 			res.exitCode, ExitPreflight, res.stderr)
+	}
+	if !strings.Contains(res.stderr, "no CRENEIN installation found") {
+		t.Errorf("stderr should mention no installation found; got: %s", res.stderr)
 	}
 }
 

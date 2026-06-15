@@ -207,7 +207,8 @@ func Update(ctx context.Context, deps Deps, opts UpdateOptions) (*UpdateResult, 
 	if healthErr := runUpdateHealthChecks(ctx, deps, composeFile, opts, res, now); healthErr != nil {
 		// Rollback on health failure.
 		appendUpdateLog(deps, opts, now, "ERR", "health check failed — initiating rollback")
-		if rbErr := performRollback(ctx, deps, composeFile, state, opts); rbErr != nil {
+		rbErr := performRollback(ctx, deps, composeFile, state, opts)
+		if rbErr != nil {
 			res.RollbackFailed = true
 			appendUpdateLog(deps, opts, now, "ERR", "rollback also failed: "+rbErr.Error())
 		}
@@ -215,6 +216,16 @@ func Update(ctx context.Context, deps Deps, opts UpdateOptions) (*UpdateResult, 
 		res.NewAgentImageID = res.PreviousAgentImageID
 		res.NewFrontendImageID = res.PreviousFrontendImageID
 		appendUpdateLog(deps, opts, now, "WARN", fmt.Sprintf("rolled back to %s; backup at %s", state.AgentImageID, backupPath))
+		// When the rollback ALSO failed, propagate the specific rollback error so
+		// the operator sees the detail (e.g. "previous agent image ID is unknown")
+		// at exit 6. The cmd layer prioritizes RolledBack/RollbackFailed for exit
+		// code mapping, so surfacing this error does not change 5-vs-6 classification
+		// — it only enriches the message. When rollback succeeded (exit 5), keep
+		// returning nil (best-effort recovery succeeded).
+		if rbErr != nil {
+			return res, cnerr.Wrap("engine.update.rollback", rbErr,
+				"rollback failed after health-check failure; manual recovery required")
+		}
 		return res, nil
 	}
 

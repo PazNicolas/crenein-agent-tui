@@ -550,12 +550,10 @@ func TestDetectAgentVersion_DockerLatestTag(t *testing.T) {
 	}
 	client := release.NewManifestClient(http, docker, dockerx.NewFakeFS(nil), "/home/test", time.Now)
 	ver := client.DetectAgentVersion(context.Background())
-	// Should report "unknown (digest sha256:...)"
-	if ver == "unknown" {
-		t.Error("expected digest report, not plain unknown")
-	}
-	if len(ver) == 0 || ver[:7] != "unknown" {
-		t.Errorf("unexpected version format: %q", ver)
+	// The :latest tag carries no semantic version, so agent.version must be
+	// exactly "unknown" (no embedded digest) per the spec.
+	if ver != "unknown" {
+		t.Errorf("got %q, want exactly %q", ver, "unknown")
 	}
 }
 
