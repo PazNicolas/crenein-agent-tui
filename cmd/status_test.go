@@ -13,6 +13,7 @@ import (
 	"github.com/PazNicolas/crenein-agent-tui/internal/cnerr"
 	"github.com/PazNicolas/crenein-agent-tui/internal/dockerx"
 	"github.com/PazNicolas/crenein-agent-tui/internal/release"
+	"github.com/PazNicolas/crenein-agent-tui/internal/status"
 )
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ services:
 
 // runStatusCmd runs the status command with injected deps and returns
 // stdout, stderr, and the resolved exit code.
-func runStatusCmd(t *testing.T, args []string, deps statusDeps) cmdResult {
+func runStatusCmd(t *testing.T, args []string, deps status.Deps) cmdResult {
 	t.Helper()
 
 	root := newRootCmd()
@@ -78,8 +79,8 @@ func runStatusCmd(t *testing.T, args []string, deps statusDeps) cmdResult {
 	}
 }
 
-// allRunningDeps builds a statusDeps where all 5 services report as running.
-func allRunningDeps() statusDeps {
+// allRunningDeps builds a status.Deps where all 5 services report as running.
+func allRunningDeps() status.Deps {
 	states := []dockerx.ContainerState{
 		{Service: "agent", Name: "stack-agent-1", Status: "Up 3 days (healthy)", Running: true, ImageID: "sha256:abc"},
 		{Service: "frontend", Name: "stack-frontend-1", Status: "Up 3 days", Running: true, ImageID: "sha256:def"},
@@ -90,17 +91,17 @@ func allRunningDeps() statusDeps {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	return statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	return status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) {
+		DetectAgentVersion: func(_ context.Context) (string, string) {
 			return "1.8.3", "health"
 		},
-		readFile:   fs.ReadFile,
-		readDir:    func(path string) ([]string, error) { return nil, nil },
-		installDir: ".",
-		now:        func() time.Time { return fixedStatusNow },
+		ReadFile:   fs.ReadFile,
+		ReadDir:    func(path string) ([]string, error) { return nil, nil },
+		InstallDir: ".",
+		Now:        func() time.Time { return fixedStatusNow },
 	}
 }
 
@@ -129,7 +130,7 @@ func TestStatus_AllRunning_JSON_Schema(t *testing.T) {
 		t.Fatalf("exit code = %d, want 0", res.exitCode)
 	}
 
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("stdout is not valid JSON: %v\nstdout: %q", err, res.stdout)
 	}
@@ -186,15 +187,15 @@ func TestStatus_Degraded_Redis_Exited(t *testing.T) {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	deps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	deps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
-		readFile:           fs.ReadFile,
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         ".",
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+		ReadFile:           fs.ReadFile,
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         ".",
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	// Human mode.
@@ -210,11 +211,11 @@ func TestStatus_Degraded_Redis_Exited(t *testing.T) {
 	}
 
 	// redis.state == "exited" in JSON.
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(resJSON.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v\nstdout: %q", err, resJSON.stdout)
 	}
-	var redisSvc *statusSvcEntry
+	var redisSvc *status.SvcEntry
 	for i := range doc.Services {
 		if doc.Services[i].Name == "redis" {
 			redisSvc = &doc.Services[i]
@@ -241,15 +242,15 @@ func TestStatus_MissingService(t *testing.T) {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	deps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	deps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "unknown", "unknown" },
-		readFile:           fs.ReadFile,
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         ".",
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "unknown", "unknown" },
+		ReadFile:           fs.ReadFile,
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         ".",
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	res := runStatusCmd(t, []string{"--json"}, deps)
@@ -257,12 +258,12 @@ func TestStatus_MissingService(t *testing.T) {
 		t.Errorf("exit code = %d, want %d (missing service → degraded)", res.exitCode, ExitOpFailure)
 	}
 
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	var influxSvc *statusSvcEntry
+	var influxSvc *status.SvcEntry
 	for i := range doc.Services {
 		if doc.Services[i].Name == "influxdb" {
 			influxSvc = &doc.Services[i]
@@ -278,16 +279,16 @@ func TestStatus_MissingService(t *testing.T) {
 
 // TestStatus_NoInstall_Exit3 verifies that missing installation → exit 3 + suggestion.
 func TestStatus_NoInstall_Exit3(t *testing.T) {
-	// readFile returns error → no compose file found.
-	deps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	// ReadFile returns error → no compose file found.
+	deps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return nil, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "unknown", "unknown" },
-		readFile:           func(name string) ([]byte, error) { return nil, errors.New("not found") },
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         "", // force detection
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "unknown", "unknown" },
+		ReadFile:           func(name string) ([]byte, error) { return nil, errors.New("not found") },
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         "", // force detection
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	// Human mode.
@@ -333,19 +334,19 @@ func TestStatus_VersionSourceDegradation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ver, src := tc.version, tc.source
-			deps := statusDeps{
-				composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+			deps := status.Deps{
+				ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 					return states, nil
 				},
-				detectAgentVersion: func(_ context.Context) (string, string) { return ver, src },
-				readFile:           fs.ReadFile,
-				readDir:            func(string) ([]string, error) { return nil, nil },
-				installDir:         ".",
-				now:                func() time.Time { return fixedStatusNow },
+				DetectAgentVersion: func(_ context.Context) (string, string) { return ver, src },
+				ReadFile:           fs.ReadFile,
+				ReadDir:            func(string) ([]string, error) { return nil, nil },
+				InstallDir:         ".",
+				Now:                func() time.Time { return fixedStatusNow },
 			}
 
 			res := runStatusCmd(t, []string{"--json"}, deps)
-			var doc statusJSONDoc
+			var doc status.Doc
 			if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 				t.Fatalf("invalid JSON: %v", err)
 			}
@@ -405,11 +406,11 @@ func TestStatus_JSON_AllRequiredFields(t *testing.T) {
 func TestStatus_ExitCodeConsistentHumanAndJSON(t *testing.T) {
 	cases := []struct {
 		name     string
-		deps     func() statusDeps
+		deps     func() status.Deps
 		wantCode int
 	}{
 		{"all-running", allRunningDeps, ExitSuccess},
-		{"degraded", func() statusDeps {
+		{"degraded", func() status.Deps {
 			states := []dockerx.ContainerState{
 				{Service: "agent", Status: "Up 1 day", Running: true},
 				{Service: "frontend", Status: "Up 1 day", Running: true},
@@ -418,15 +419,15 @@ func TestStatus_ExitCodeConsistentHumanAndJSON(t *testing.T) {
 				{Service: "redis", Status: "Exited (1) 1 hour ago", Running: false},
 			}
 			fs := dockerx.NewFakeFS(map[string][]byte{"./docker-compose.yml": []byte(validComposeContent)})
-			return statusDeps{
-				composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+			return status.Deps{
+				ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 					return states, nil
 				},
-				detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
-				readFile:           fs.ReadFile,
-				readDir:            func(string) ([]string, error) { return nil, nil },
-				installDir:         ".",
-				now:                func() time.Time { return fixedStatusNow },
+				DetectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+				ReadFile:           fs.ReadFile,
+				ReadDir:            func(string) ([]string, error) { return nil, nil },
+				InstallDir:         ".",
+				Now:                func() time.Time { return fixedStatusNow },
 			}
 		}, ExitOpFailure},
 	}
@@ -454,96 +455,13 @@ func TestStatus_ExitCodeConsistentHumanAndJSON(t *testing.T) {
 func TestStatus_Timestamp_Deterministic(t *testing.T) {
 	res := runStatusCmd(t, []string{"--json"}, allRunningDeps())
 
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	want := "2026-06-14T12:00:00Z"
 	if doc.Timestamp != want {
 		t.Errorf("timestamp = %q, want %q", doc.Timestamp, want)
-	}
-}
-
-// ─── Unit tests for uptime parsing ────────────────────────────────────────────
-
-func TestParseUptimeSeconds(t *testing.T) {
-	cases := []struct {
-		status string
-		want   int64
-	}{
-		{"Up 3 days", 3 * 86400},
-		{"Up 2 minutes", 2 * 60},
-		{"Up About an hour", 3600},
-		{"Up 1 hour", 3600},
-		{"Up 2 hours", 2 * 3600},
-		{"Up 5 weeks", 5 * 7 * 86400},
-		{"Up 3 days (healthy)", 3 * 86400},
-		{"Up 3 days (unhealthy)", 3 * 86400},
-		{"Exited (0) 2 hours ago", 0},
-		{"", 0},
-		{"Up", 0},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.status, func(t *testing.T) {
-			got := parseUptimeSeconds(tc.status)
-			if got != tc.want {
-				t.Errorf("parseUptimeSeconds(%q) = %d, want %d", tc.status, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestParseHealthFromStatus verifies health extraction from status text.
-func TestParseHealthFromStatus(t *testing.T) {
-	cases := []struct {
-		status string
-		want   string
-	}{
-		{"Up 3 days (healthy)", "healthy"},
-		{"Up 3 days (unhealthy)", "unhealthy"},
-		{"Up 3 days", "none"},
-		{"Exited (0)", "none"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.status, func(t *testing.T) {
-			got := parseHealthFromStatus(tc.status)
-			if got != tc.want {
-				t.Errorf("parseHealthFromStatus(%q) = %q, want %q", tc.status, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestImageTagFromCompose verifies image tag extraction from compose content.
-func TestImageTagFromCompose(t *testing.T) {
-	cases := []struct {
-		service string
-		want    string
-	}{
-		{"agent", "crenein/c-network-agent-back:1.8.3"},
-		{"mongodb", "mongodb/mongodb-community-server:7.0-ubi8"},
-		{"redis", "redis:7.2"},
-		{"nonexistent", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.service, func(t *testing.T) {
-			got := imageTagFromCompose(validComposeContent, tc.service)
-			if got != tc.want {
-				t.Errorf("imageTagFromCompose(_, %q) = %q, want %q", tc.service, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestMongoInfoFromCompose verifies mongo image and major extraction.
-func TestMongoInfoFromCompose(t *testing.T) {
-	imageTag, major := mongoInfoFromCompose(validComposeContent)
-	if imageTag != "mongodb/mongodb-community-server:7.0-ubi8" {
-		t.Errorf("imageTag = %q, want mongodb/mongodb-community-server:7.0-ubi8", imageTag)
-	}
-	if major != "7.x" {
-		t.Errorf("major = %q, want 7.x", major)
 	}
 }
 
@@ -559,15 +477,15 @@ func TestStatus_Unhealthy_Exit1(t *testing.T) {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	deps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	deps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
-		readFile:           fs.ReadFile,
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         ".",
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+		ReadFile:           fs.ReadFile,
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         ".",
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	res := runStatusCmd(t, []string{"--json"}, deps)
@@ -575,11 +493,11 @@ func TestStatus_Unhealthy_Exit1(t *testing.T) {
 		t.Errorf("exit code = %d, want %d (unhealthy → degraded)", res.exitCode, ExitOpFailure)
 	}
 
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	var agentSvc *statusSvcEntry
+	var agentSvc *status.SvcEntry
 	for i := range doc.Services {
 		if doc.Services[i].Name == "agent" {
 			agentSvc = &doc.Services[i]
@@ -609,19 +527,19 @@ func TestStatus_AgentHealth_Unknown(t *testing.T) {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	deps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	deps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
-		readFile:           fs.ReadFile,
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         ".",
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+		ReadFile:           fs.ReadFile,
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         ".",
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	res := runStatusCmd(t, []string{"--json"}, deps)
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -631,11 +549,13 @@ func TestStatus_AgentHealth_Unknown(t *testing.T) {
 }
 
 // TestContainerStateFromStatus verifies state derivation from status text.
+// NOTE: unit tests for ContainerStateFromStatus are in internal/status/status_test.go.
+// This test is retained here for completeness but delegates to status package.
 func TestContainerStateFromStatus(t *testing.T) {
 	cases := []struct {
-		status  string
-		running bool
-		want    string
+		statusStr string
+		running   bool
+		want      string
 	}{
 		{"Up 3 days", true, "running"},
 		{"Up 3 days (healthy)", true, "running"},
@@ -647,10 +567,10 @@ func TestContainerStateFromStatus(t *testing.T) {
 		{"", true, "running"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.status+"_running="+fmt.Sprintf("%v", tc.running), func(t *testing.T) {
-			got := containerStateFromStatus(tc.status, tc.running)
+		t.Run(tc.statusStr+"_running="+fmt.Sprintf("%v", tc.running), func(t *testing.T) {
+			got := status.ContainerStateFromStatus(tc.statusStr, tc.running)
 			if got != tc.want {
-				t.Errorf("containerStateFromStatus(%q, %v) = %q, want %q", tc.status, tc.running, got, tc.want)
+				t.Errorf("ContainerStateFromStatus(%q, %v) = %q, want %q", tc.statusStr, tc.running, got, tc.want)
 			}
 		})
 	}
@@ -668,23 +588,23 @@ func TestStatus_RestartingState(t *testing.T) {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	deps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	deps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
-		readFile:           fs.ReadFile,
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         ".",
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+		ReadFile:           fs.ReadFile,
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         ".",
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	res := runStatusCmd(t, []string{"--json"}, deps)
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	var redisSvc *statusSvcEntry
+	var redisSvc *status.SvcEntry
 	for i := range doc.Services {
 		if doc.Services[i].Name == "redis" {
 			redisSvc = &doc.Services[i]
@@ -725,9 +645,9 @@ func statusManifest(cliLatest, agentLatest string) *release.Manifest {
 }
 
 // allRunningDepsWithManifest returns allRunningDeps plus the given manifest client.
-func allRunningDepsWithManifest(mc release.Client) statusDeps {
+func allRunningDepsWithManifest(mc release.Client) status.Deps {
 	d := allRunningDeps()
-	d.manifestClient = mc
+	d.ManifestClient = mc
 	return d
 }
 
@@ -742,7 +662,7 @@ func TestStatus_UpdateAvailable_JSON_UpdatesObject(t *testing.T) {
 	// Agent: 1.8.3 < 1.9.0 → update available.
 	mc := &fakeManifestClient{manifest: m}
 	deps := allRunningDepsWithManifest(mc)
-	// Override build.version via test helper approach: use collectStatus directly
+	// Override build.version via test helper approach: use Collect directly
 	// with a known cliVersion. However, build.version is package-level so we test
 	// the integration via the full command — build.version == "" in tests → "dev".
 	// Instead, supply a version by setting it and restoring.
@@ -765,7 +685,7 @@ func TestStatus_UpdateAvailable_JSON_UpdatesObject(t *testing.T) {
 		t.Fatal("top-level field 'updates' missing from JSON output")
 	}
 
-	var updates statusUpdatesInfo
+	var updates status.UpdatesInfo
 	if err := json.Unmarshal(updatesRaw, &updates); err != nil {
 		t.Fatalf("updates is not a valid JSON object: %v", err)
 	}
@@ -821,7 +741,7 @@ func TestStatus_UpdateUpToDate_JSON(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 
-	var updates statusUpdatesInfo
+	var updates status.UpdatesInfo
 	if err := json.Unmarshal(raw["updates"], &updates); err != nil {
 		t.Fatalf("updates not a valid object: %v", err)
 	}
@@ -869,7 +789,7 @@ func TestStatus_ManifestFetchFails_StatusDoesNotFail(t *testing.T) {
 	if !ok {
 		t.Fatal("updates field should be present even when manifest fetch fails")
 	}
-	var updates statusUpdatesInfo
+	var updates status.UpdatesInfo
 	if err := json.Unmarshal(updatesRaw, &updates); err != nil {
 		t.Fatalf("updates not a valid object: %v", err)
 	}
@@ -906,7 +826,7 @@ func TestStatus_DevBuild_NoCLIUpdateAvailable(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.stdout), &raw); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	var updates statusUpdatesInfo
+	var updates status.UpdatesInfo
 	if err := json.Unmarshal(raw["updates"], &updates); err != nil {
 		t.Fatalf("updates not valid: %v", err)
 	}
@@ -952,7 +872,7 @@ func TestStatus_SchemaVersion1_WithUpdates(t *testing.T) {
 	defer func() { build.version = origVersion }()
 
 	res := runStatusCmd(t, []string{"--json"}, deps)
-	var doc statusJSONDoc
+	var doc status.Doc
 	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -974,20 +894,20 @@ func TestStatus_ExitCode_NotChangedByManifest(t *testing.T) {
 	fs := dockerx.NewFakeFS(map[string][]byte{
 		"./docker-compose.yml": []byte(validComposeContent),
 	})
-	baseDeps := statusDeps{
-		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+	baseDeps := status.Deps{
+		ComposePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
 			return states, nil
 		},
-		detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
-		readFile:           fs.ReadFile,
-		readDir:            func(string) ([]string, error) { return nil, nil },
-		installDir:         ".",
-		now:                func() time.Time { return fixedStatusNow },
+		DetectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+		ReadFile:           fs.ReadFile,
+		ReadDir:            func(string) ([]string, error) { return nil, nil },
+		InstallDir:         ".",
+		Now:                func() time.Time { return fixedStatusNow },
 	}
 
 	fetchErr := cnerr.New("net error", "check connectivity")
 	mc := &fakeManifestClient{fetchErr: fetchErr}
-	baseDeps.manifestClient = mc
+	baseDeps.ManifestClient = mc
 
 	res := runStatusCmd(t, []string{"--json"}, baseDeps)
 	if res.exitCode != ExitOpFailure {

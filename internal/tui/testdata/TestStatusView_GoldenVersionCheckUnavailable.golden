@@ -1,0 +1,19 @@
+ Services                                                              
+ SERVICE     ST      STATE      VERSION/IMAGE                 UPTIME   
+ --------------------------------------------------------------------- 
+ agent       [OK]    running    …/c-network-agent-back:1.8.3  2h       
+ frontend    [OK]    running    …in/c-network-frontend:1.8.3  2h       
+ mongodb     [OK]    running    mongo:4.4                     2h       
+ influxdb    [OK]    running    influxdb:2.7                  2h       
+ redis       [OK]    running    redis:7                       2h       
+
+ Versions & Updates                   
+                                      
+ CLI    : v0.1.0                      
+ Agent  : 1.8.3 (health)              
+                                      
+ Update indicators                    
+   CLI   : version check unavailable  
+   Agent : version check unavailable  
+                                      
+   Press u to open the Update wizard. 
