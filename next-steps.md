@@ -36,13 +36,20 @@ Modo interactivo: cada lote se delega → se verifican gates + se revisa el cód
 - **AD-5:** layout responsive desde `WindowSizeMsg`, un solo breakpoint (100 cols).
 - **AD-6:** indicadores de update-available degradan a "unknown" si el manifest no está.
 
-### Riesgos / notas
-- **Extracción de `engine.Status` (Lote 2):** no existe hoy; la composición vive en `cmd/status.go`. El TUI no debe importar `cmd` → extraer a un paquete compartido sin romper `cmd/status.go` ni sus tests.
-- Reuso directo (sin refactor): doctor → `engine.Run`, update → `engine.Update`, install → `engine.Install`, logs → `dockerx.ComposeLogsStream`. Solo status necesita la extracción.
-- Verificar que el binario siga **estático** tras agregar las deps de charm (1.1).
+### Riesgos / notas (resueltos durante Lotes 1–5)
+- ✅ **Extracción de `engine.Status` (Lote 2):** resuelta — la composición se movió de `cmd/status.go` a `internal/status` (`Collect`/`Deps`/`Doc`/`ResolveInstallDir`/…); JSON de `crenein-agent status` byte-idéntico; `cmd` no se importa desde el TUI.
+- ✅ Reuso directo confirmado: doctor → `engine.Run` (atómico, sin eventos), update → `engine.Update` (event-driven), install → `engine.Install` (event-driven), logs → `dockerx.ComposeLogsStream` (writer→canal).
+- ✅ Binario sigue **estático** tras las deps de charm (bubbletea/lipgloss/bubbles/textinput/teatest), verificado en cada lote.
 
 ## Pendiente manual (en VM cliente — Nicolás)
 Validación `[VALIDATE ON VM]` que abarca varios changes: instalación E2E, idempotencia, exit codes, no-AVX, compose v1, terminales reales (SSH/screen/web console). Tareas: `add-cli-scaffold` 5.3–5.5, `add-engine-detectors` 7.8, `add-headless-commands` 8.4/9.4, `add-tui-dashboard` 7.4, `add-selfupdate` 1.5+6.2–6.4. El script `test/integration/full_stack.sh` sirve de guía para el round-trip.
 
 ## Para retomar
-Arrancar por el **Lote 1 (Fundación)** del TUI. Confirmar modo de ejecución (interactivo) y backend de artefactos (OpenSpec).
+Arrancar por el **Lote 6 (Cierre)** del TUI — único lote de implementación restante:
+- teatest globales: navegación global (s→d→esc→l→esc verificando vista activa), quit-durante-operación (opRunning→q→overlay→y), too-small global vía `WindowSizeMsg`, NO_COLOR goldens teatest reales de las 5 vistas en mono.
+- Gates finales (gofmt/vet/build/test) + revisión de conformidad contra el spec.
+Tras el Lote 6 el change queda **37/38**; solo restará 7.4 `[VALIDATE ON VM]` (manual de Nicolás) antes de `archive`.
+
+Estado a 2026-06-15: Lotes 1–5 commiteados y pusheados a `main` (`8b30563`), CI verde. `go test -race ./internal/tui/` limpio. Modo interactivo, backend OpenSpec.
+
+Deuda opcional anotada: (a) `install_view.go` no usa el `baseWizard` (sus tests acceden a campos internos; documentado); (b) `logsView` no cancela su stream al navegar fuera (por diseño — ring buffer acota memoria).
