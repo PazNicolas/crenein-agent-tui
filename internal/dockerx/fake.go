@@ -3,6 +3,7 @@ package dockerx
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 )
@@ -40,12 +41,19 @@ type FakeClient struct {
 	ImageInspectErr  error
 	ImageTagErr      error
 	ImagePruneErr    error
+	ImagePullErr     error
 	ContainerListOut []ContainerState
 	ContainerListErr error
 	// ComposeLogsOut maps service name to canned log output.
 	// If the service is not in the map, empty output is returned.
 	ComposeLogsOut map[string][]byte
 	ComposeLogsErr error
+
+	// ComposeLogsStreamOut is the canned payload written to stdout by
+	// ComposeLogsStream. If nil, nothing is written.
+	ComposeLogsStreamOut []byte
+	// ComposeLogsStreamErr is returned by ComposeLogsStream.
+	ComposeLogsStreamErr error
 }
 
 func (f *FakeClient) record(method string, args ...string) {
@@ -104,6 +112,12 @@ func (f *FakeClient) ImagePrune(_ context.Context) error {
 	return f.ImagePruneErr
 }
 
+// ImagePull records the call and returns ImagePullErr.
+func (f *FakeClient) ImagePull(_ context.Context, ref string) error {
+	f.record("ImagePull", ref)
+	return f.ImagePullErr
+}
+
 // ContainerList records the call and returns ContainerListOut / ContainerListErr.
 func (f *FakeClient) ContainerList(_ context.Context, nameFilter string) ([]ContainerState, error) {
 	f.record("ContainerList", nameFilter)
@@ -122,6 +136,23 @@ func (f *FakeClient) ComposeLogs(_ context.Context, composeFile, service string,
 		}
 	}
 	return nil, nil
+}
+
+// ComposeLogsStream records the call, writes ComposeLogsStreamOut to stdout,
+// and returns ComposeLogsStreamErr. Context cancellation returns nil (clean exit).
+func (f *FakeClient) ComposeLogsStream(ctx context.Context, composeFile, service string, tail int, follow, noColor bool, stdout io.Writer) error {
+	f.record("ComposeLogsStream", composeFile, service,
+		fmt.Sprintf("tail=%d follow=%v noColor=%v", tail, follow, noColor))
+	if ctx.Err() != nil {
+		return nil
+	}
+	if f.ComposeLogsStreamErr != nil {
+		return f.ComposeLogsStreamErr
+	}
+	if len(f.ComposeLogsStreamOut) > 0 && stdout != nil {
+		stdout.Write(f.ComposeLogsStreamOut) //nolint:errcheck
+	}
+	return nil
 }
 
 // ─── FakeCommandRunner ───────────────────────────────────────────────────────
@@ -301,6 +332,25 @@ func (f *FakeFS) ReadDir(path string) ([]string, error) {
 		names = append(names, n)
 	}
 	return names, nil
+}
+
+// AppendFile appends data to the named file in the fake filesystem, creating
+// it if it does not exist.
+func (f *FakeFS) AppendFile(name string, data []byte, perm uint32) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Files == nil {
+		f.Files = make(map[string][]byte)
+	}
+	existing := f.Files[name]
+	f.Files[name] = append(existing, data...)
+	if f.Modes == nil {
+		f.Modes = make(map[string]uint32)
+	}
+	if _, exists := f.Modes[name]; !exists {
+		f.Modes[name] = perm
+	}
+	return nil
 }
 
 // RemoveAll deletes path and any children (keys equal to path or prefixed by

@@ -50,6 +50,12 @@ release:
   github:
     owner: PazNicolas
     name: crenein-agent-tui
+  # versions.json is generated and schema-validated by the release workflow
+  # (tools/genmanifest) BEFORE goreleaser runs; here we attach it as a release
+  # asset so the latest release always carries the current manifest. The file
+  # must exist at release time, otherwise goreleaser fails the release.
+  extra_files:
+    - glob: ./versions.json
 
 changelog:
   use: github

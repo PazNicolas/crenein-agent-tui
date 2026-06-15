@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -50,5 +51,41 @@ func TestVersionFlagMatchesSubcommand(t *testing.T) {
 	}
 	if strings.Contains(fromFlag, "dev") {
 		t.Errorf("release version output %q must not contain %q", fromFlag, "dev")
+	}
+}
+
+// TestUnknownFlag_Exit64 verifies that passing an unknown flag to any
+// subcommand exits 64 (EX_USAGE) rather than 1.
+func TestUnknownFlag_Exit64(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"root unknown flag", []string{"--this-flag-does-not-exist"}},
+		{"version unknown flag", []string{"version", "--this-flag-does-not-exist"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newRootCmd()
+			var outBuf, errBuf bytes.Buffer
+			root.SetOut(&outBuf)
+			root.SetErr(&errBuf)
+			root.SilenceErrors = true
+			root.SilenceUsage = true
+			root.SetArgs(tc.args)
+
+			err := root.Execute()
+			if err == nil {
+				t.Fatalf("expected error for unknown flag %v, got nil", tc.args)
+			}
+
+			var ecErr *exitCodeError
+			if !errors.As(err, &ecErr) {
+				t.Fatalf("expected *exitCodeError, got %T: %v", err, err)
+			}
+			if ecErr.code != ExitUsage {
+				t.Errorf("exit code = %d, want %d (ExitUsage/64)", ecErr.code, ExitUsage)
+			}
+		})
 	}
 }

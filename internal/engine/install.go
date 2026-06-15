@@ -50,6 +50,14 @@ type InstallOptions struct {
 	// AdminPassword overrides the default admin account password (admin123).
 	AdminPassword string
 
+	// APIURL overrides the CNETWORK_API_URL written to the .env file.
+	// When empty, the default value "http://localhost:8000" is used.
+	APIURL string
+
+	// APIToken overrides the CNETWORK_API_TOKEN written to the .env file.
+	// When empty, the default value "your-api-token-here" is used.
+	APIToken string
+
 	// DiskSpaceProvider injects a fake disk-space prober for tests.
 	// When nil, the real syscall is used.
 	DiskSpaceProvider detect.DiskSpaceProvider
@@ -90,6 +98,22 @@ func (o InstallOptions) adminPassword() string {
 		return o.AdminPassword
 	}
 	return "admin123"
+}
+
+// apiURL returns the resolved C-Network API URL.
+func (o InstallOptions) apiURL() string {
+	if o.APIURL != "" {
+		return o.APIURL
+	}
+	return "http://localhost:8000"
+}
+
+// apiToken returns the resolved C-Network API token.
+func (o InstallOptions) apiToken() string {
+	if o.APIToken != "" {
+		return o.APIToken
+	}
+	return "your-api-token-here"
 }
 
 // StepResult records the outcome of one install step.
@@ -174,7 +198,7 @@ func Install(ctx context.Context, deps Deps, opts InstallOptions) (*InstallResul
 	runBackupsUser(ctx, deps, res)
 
 	// ── 4.7 .env ─────────────────────────────────────────────────────────────
-	influxToken, err := runEnvFile(ctx, deps, dir, res)
+	influxToken, err := runEnvFile(ctx, deps, dir, res, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +216,7 @@ func Install(ctx context.Context, deps Deps, opts InstallOptions) (*InstallResul
 	runPostInstall(ctx, deps, dir, composeFile, influxToken, opts.adminEmail(), opts.adminPassword(), res, opts)
 
 	// ── 4.12 Access summary ──────────────────────────────────────────────────
-	buildAccessSummary(dir, opts.adminEmail(), opts.adminPassword(), res)
+	buildAccessSummary(dir, opts.adminEmail(), res)
 
 	return res, nil
 }
@@ -599,7 +623,7 @@ func randomInfluxToken() (string, error) {
 
 // runEnvFile creates .env in dir if it does not exist, or reuses it if it does
 // (idempotence, AD-5). Returns the InfluxDB token (needed for bucket creation).
-func runEnvFile(_ context.Context, deps Deps, dir string, res *InstallResult) (string, error) {
+func runEnvFile(_ context.Context, deps Deps, dir string, res *InstallResult, opts InstallOptions) (string, error) {
 	const step = "env-file"
 	deps.StepStarted(step)
 
@@ -648,9 +672,9 @@ MONGODB_INITDB_ROOT_PASSWORD=%s
 REDIS_PASSWORD=%s
 
 # C-Network API Configuration (configurar según necesidad)
-CNETWORK_API_URL=http://localhost:8000
-CNETWORK_API_TOKEN=your-api-token-here
-`, influxToken, influxToken, mongoPwd, redisPwd)
+CNETWORK_API_URL=%s
+CNETWORK_API_TOKEN=%s
+`, influxToken, influxToken, mongoPwd, redisPwd, opts.apiURL(), opts.apiToken())
 
 	// Write with chmod 600.
 	if err := deps.FS.WriteFile(envPath, []byte(content), 0o600); err != nil {
@@ -966,12 +990,14 @@ func runAdminUserCreation(ctx context.Context, deps Deps, email, password string
 	}
 
 	// All attempts exhausted — warn and continue.
+	// NOTE: password is intentionally NOT logged. Retrieve it from the .env file.
 	warn := fmt.Sprintf(
 		"admin user creation failed after 3 attempts; create manually:\n"+
 			"  curl -k -X POST https://localhost:8000/api/v1/admins/register \\\n"+
 			"    -H 'Content-Type: application/json' \\\n"+
-			"    -d '{\"email\":\"%s\",\"password\":\"%s\"}'",
-		email, password)
+			"    -d '{\"email\":\"%s\",\"password\":\"<ADMIN_PASSWORD>\"}'"+
+			"\n  (ADMIN_PASSWORD is stored in the .env file — do not log or share it)",
+		email)
 	res.Warnings = append(res.Warnings, warn)
 	deps.Warn(step, warn)
 	deps.StepFinished(step, nil)
@@ -1212,12 +1238,12 @@ func createBucketViaREST(ctx context.Context, deps Deps, token, orgID, bucket st
 
 // ─── 4.12 Access summary ─────────────────────────────────────────────────────
 
-func buildAccessSummary(dir, adminEmail, adminPassword string, res *InstallResult) {
+func buildAccessSummary(dir, adminEmail string, res *InstallResult) {
 	res.AccessSummary = []AccessEntry{
 		{Label: "Backend API (HTTPS)", Value: "https://<VM_IP>:8000"},
 		{Label: "Frontend (HTTPS)", Value: "https://<VM_IP>:443"},
 		{Label: "Frontend (HTTP)", Value: "http://<VM_IP>:80"},
-		{Label: "Admin credentials", Value: adminEmail + " / " + adminPassword},
+		{Label: "Admin credentials", Value: adminEmail + " / **** (see .env)"},
 		{Label: "InfluxDB", Value: "http://<VM_IP>:8086 (admin/adminpassword)"},
 		{Label: "Persistent data", Value: "/data/{mongodb,influxdb2,redis,files}"},
 		{Label: "Backend certificates", Value: dir + "/c-network-agent-back/certs/ (365 days)"},

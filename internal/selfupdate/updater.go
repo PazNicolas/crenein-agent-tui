@@ -48,6 +48,12 @@ type Result struct {
 	ToVersion string
 }
 
+// Performer is the interface implemented by *Updater. cmd/ injects a fake in
+// tests to avoid real filesystem and network operations.
+type Performer interface {
+	Update(ctx context.Context, currentVersion, targetVersion string, allowDowngrade bool) (*Result, error)
+}
+
 // Updater performs a self-update of the running binary. All I/O is injected via
 // seams so the logic can be unit-tested without network access or real binaries.
 type Updater struct {
@@ -101,14 +107,14 @@ func (u *Updater) Update(ctx context.Context, currentVersion, targetVersion stri
 		return nil, cnerr.Wrap(
 			"selfupdate.probeWritable",
 			err,
-			fmt.Sprintf("try running with sudo: sudo crenein-agent self-update"),
+			"try running with sudo: sudo crenein-agent self-update",
 		)
 	}
 	if err = u.fileOps.ProbeWritable(binaryDir); err != nil {
 		return nil, cnerr.Wrap(
 			"selfupdate.probeWritableDir",
 			err,
-			fmt.Sprintf("try running with sudo: sudo crenein-agent self-update"),
+			"try running with sudo: sudo crenein-agent self-update",
 		)
 	}
 

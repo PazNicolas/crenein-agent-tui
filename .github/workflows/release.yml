@@ -25,6 +25,22 @@ jobs:
         with:
           go-version: "1.24"
 
+      # Generate versions.json from the checked-in agent seed merged with the CLI
+      # tag being released, and validate it against the manifest schema. The
+      # generator exits non-zero on any schema violation, failing the job BEFORE
+      # goreleaser runs — so a bad manifest blocks the release and no asset is
+      # ever uploaded. goreleaser attaches the file via release.extra_files.
+      - name: Generate and validate versions.json
+        run: |
+          set -euo pipefail
+          NOTES="$(git tag -l --format='%(contents:subject)' "${GITHUB_REF_NAME}")"
+          go run ./tools/genmanifest \
+            -tag "${GITHUB_REF_NAME}" \
+            -notes "${NOTES}" \
+            -out versions.json
+          echo "----- versions.json -----"
+          cat versions.json
+
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:

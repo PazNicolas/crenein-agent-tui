@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 
@@ -136,9 +138,19 @@ func (c *CLIClient) ImagePrune(ctx context.Context) error {
 	return nil
 }
 
+// ImagePull pulls a single image by reference (docker pull <ref>).
+func (c *CLIClient) ImagePull(ctx context.Context, ref string) error {
+	out, err := runCmd(ctx, "docker", "pull", ref)
+	if err != nil {
+		return cnerr.Wrap("dockerx.ImagePull", fmt.Errorf("%w: %s", err, out),
+			fmt.Sprintf("check network connectivity and that the image %q exists", ref))
+	}
+	return nil
+}
+
 // ContainerList lists running containers, optionally filtered by name substring.
 func (c *CLIClient) ContainerList(ctx context.Context, nameFilter string) ([]ContainerState, error) {
-	args := []string{"ps", "--format", `{"Name":"{{.Names}}","Status":"{{.Status}}","Image":"{{.Image}}","ImageID":"{{.ID}}"}`}
+	args := []string{"ps", "--format", `{"Name":"{{.Names}}","Status":"{{.Status}}","Image":"{{.Image}}","ImageID":"{{.ImageID}}"}`}
 	if nameFilter != "" {
 		args = append(args, "--filter", "name="+nameFilter)
 	}
@@ -162,6 +174,43 @@ func (c *CLIClient) ComposeLogs(ctx context.Context, composeFile, service string
 			fmt.Sprintf("inspect the %q service manually: docker compose logs %s", service, service))
 	}
 	return out, nil
+}
+
+// ComposeLogsStream streams log output for the given compose service to stdout.
+// When follow is true the stream continues until ctx is cancelled; context
+// cancellation is treated as a clean exit (returns nil). When noColor is true
+// --no-color is added to the compose args. tail ≤ 0 omits the --tail flag.
+func (c *CLIClient) ComposeLogsStream(ctx context.Context, composeFile, service string, tail int, follow, noColor bool, stdout io.Writer) error {
+	args := c.composeArgs(composeFile, "logs")
+	if noColor {
+		args = append(args, "--no-color")
+	}
+	if tail > 0 {
+		args = append(args, "--tail", fmt.Sprintf("%d", tail))
+	}
+	if follow {
+		args = append(args, "-f")
+	}
+	if service != "" {
+		args = append(args, service)
+	}
+	cmd := c.composeCmd(ctx, args...)
+	cmd.Stdout = stdout
+	if err := cmd.Run(); err != nil {
+		// Context cancellation means the caller tore down the stream — not an error.
+		if ctx.Err() != nil {
+			return nil
+		}
+		// exec.ExitError is expected when compose exits non-zero (e.g. container not found).
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return cnerr.Wrap("dockerx.ComposeLogsStream",
+				fmt.Errorf("compose logs exited %d", exitErr.ExitCode()),
+				fmt.Sprintf("inspect the %q service manually", service))
+		}
+		return cnerr.Wrap("dockerx.ComposeLogsStream", err, "failed to run compose logs")
+	}
+	return nil
 }
 
 // ─── internal helpers ────────────────────────────────────────────────────────
@@ -192,7 +241,14 @@ func (c *CLIClient) composeCmd(ctx context.Context, args ...string) *exec.Cmd {
 	case ComposeV2:
 		return exec.CommandContext(ctx, "docker", args...)
 	default: // ComposeV1
-		return exec.CommandContext(ctx, "docker-compose", args[1:]...) // strip the leading "compose" placeholder
+		// For v1, composeArgs does NOT prepend "compose", so the first arg is
+		// already the -f flag (or the subcommand when no file is given).
+		// Mirror the runCompose logic: only strip args[0] if it is the
+		// "compose" placeholder (defensive guard in case callers pass v2-style args).
+		if len(args) > 0 && args[0] == "compose" {
+			args = args[1:]
+		}
+		return exec.CommandContext(ctx, "docker-compose", args...)
 	}
 }
 

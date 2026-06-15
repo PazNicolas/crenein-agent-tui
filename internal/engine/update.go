@@ -90,8 +90,13 @@ type UpdateResult struct {
 	NewFrontendImageID string
 	// BackupPath is the directory where files were backed up.
 	BackupPath string
-	// RolledBack is true when an automatic rollback was executed.
+	// RolledBack is true when an automatic rollback was attempted (regardless of
+	// whether the rollback itself succeeded).
 	RolledBack bool
+	// RollbackFailed is true when RolledBack is true AND the rollback also
+	// failed (i.e. the system may be in an inconsistent state). When RolledBack
+	// is true and RollbackFailed is false the rollback completed successfully.
+	RollbackFailed bool
 	// NoOp is true when nothing changed (same image IDs, Force not set).
 	NoOp bool
 	// DryRun is true when the result is from a dry-run invocation.
@@ -187,7 +192,10 @@ func Update(ctx context.Context, deps Deps, opts UpdateOptions) (*UpdateResult, 
 	if err := recreateServices(ctx, deps, composeFile, opts); err != nil {
 		// Rollback immediately on compose failure.
 		appendUpdateLog(deps, opts, now, "ERR", "compose up failed — initiating rollback")
-		_ = performRollback(ctx, deps, composeFile, state, opts)
+		if rbErr := performRollback(ctx, deps, composeFile, state, opts); rbErr != nil {
+			res.RollbackFailed = true
+			appendUpdateLog(deps, opts, now, "ERR", "rollback also failed: "+rbErr.Error())
+		}
 		res.RolledBack = true
 		res.NewAgentImageID = res.PreviousAgentImageID
 		res.NewFrontendImageID = res.PreviousFrontendImageID
@@ -199,7 +207,10 @@ func Update(ctx context.Context, deps Deps, opts UpdateOptions) (*UpdateResult, 
 	if healthErr := runUpdateHealthChecks(ctx, deps, composeFile, opts, res, now); healthErr != nil {
 		// Rollback on health failure.
 		appendUpdateLog(deps, opts, now, "ERR", "health check failed — initiating rollback")
-		_ = performRollback(ctx, deps, composeFile, state, opts)
+		if rbErr := performRollback(ctx, deps, composeFile, state, opts); rbErr != nil {
+			res.RollbackFailed = true
+			appendUpdateLog(deps, opts, now, "ERR", "rollback also failed: "+rbErr.Error())
+		}
 		res.RolledBack = true
 		res.NewAgentImageID = res.PreviousAgentImageID
 		res.NewFrontendImageID = res.PreviousFrontendImageID
@@ -391,23 +402,57 @@ func detectCurrentState(ctx context.Context, deps Deps, installDir string, opts 
 
 	state := currentState{}
 
-	// Agent image ID.
+	// Agent image ID — try :latest first; fall back to the running container's ImageID.
+	// Fallback handles the case where the container runs from a versioned tag (no :latest alias).
+	// When falling back via ContainerList, docker ps gives a short 12-hex ID; we resolve
+	// the full sha256 digest via ImageInspect so that the no-op comparison in pullAndCompare
+	// (which uses the full digest from the newly pulled image) works correctly.
 	agentRef := agentImageName + ":latest"
 	agentInfo, err := deps.Client.ImageInspect(ctx, agentRef)
 	if err != nil {
-		// Try with the explicit version tag if latest fails.
-		state.AgentImageID = ""
-		deps.Warn(step, "could not inspect agent image (may not be pulled yet)")
+		// :latest not found — resolve from the running agent container so backup stores the correct ID.
+		if containers, cErr := deps.Client.ContainerList(ctx, "agent"); cErr == nil {
+			for _, c := range containers {
+				if c.ImageID != "" {
+					// Resolve short ID → full digest to normalize for no-op comparison.
+					if info, iErr := deps.Client.ImageInspect(ctx, c.ImageID); iErr == nil && info.ID != "" {
+						state.AgentImageID = info.ID
+					} else {
+						state.AgentImageID = c.ImageID
+					}
+					break
+				}
+			}
+		}
+		if state.AgentImageID == "" {
+			deps.Warn(step, "could not inspect agent image (may not be pulled yet)")
+		}
 	} else {
 		state.AgentImageID = agentInfo.ID
 	}
 
-	// Frontend image ID.
+	// Frontend image ID — try :latest first; fall back to the running container's ImageID.
+	// Same short-ID normalization as agent above.
 	frontendRef := frontendImageName + ":latest"
 	frontendInfo, err := deps.Client.ImageInspect(ctx, frontendRef)
 	if err != nil {
-		state.FrontendImageID = ""
-		deps.Warn(step, "could not inspect frontend image (may not be pulled yet)")
+		// :latest not found — resolve from the running frontend container.
+		if containers, cErr := deps.Client.ContainerList(ctx, "frontend"); cErr == nil {
+			for _, c := range containers {
+				if c.ImageID != "" {
+					// Resolve short ID → full digest to normalize for no-op comparison.
+					if info, iErr := deps.Client.ImageInspect(ctx, c.ImageID); iErr == nil && info.ID != "" {
+						state.FrontendImageID = info.ID
+					} else {
+						state.FrontendImageID = c.ImageID
+					}
+					break
+				}
+			}
+		}
+		if state.FrontendImageID == "" {
+			deps.Warn(step, "could not inspect frontend image (may not be pulled yet)")
+		}
 	} else {
 		state.FrontendImageID = frontendInfo.ID
 	}
@@ -594,11 +639,9 @@ func pullAndCompare(ctx context.Context, deps Deps, installDir, agentTag string,
 	const step = "pull"
 	deps.StepStarted(step)
 
-	composeFile := installDir + "/docker-compose.yml"
-
 	// Pull agent by EXPLICIT tag (AD-6).
 	deps.Info(step, "pulling "+agentTag)
-	if pullErr := deps.Client.ComposePull(ctx, composeFile, []string{agentTag}); pullErr != nil {
+	if pullErr := deps.Client.ImagePull(ctx, agentTag); pullErr != nil {
 		e := cnerr.Wrap("engine.update.pull", pullErr,
 			"check network connectivity and that the version exists: "+agentTag)
 		deps.StepFinished(step, e)
@@ -609,7 +652,7 @@ func pullAndCompare(ctx context.Context, deps Deps, installDir, agentTag string,
 	frontendTag := fmt.Sprintf("%s:%s", frontendImageName, opts.Version)
 	if !opts.SkipFrontend {
 		deps.Info(step, "pulling "+frontendTag)
-		if pullErr := deps.Client.ComposePull(ctx, composeFile, []string{frontendTag}); pullErr != nil {
+		if pullErr := deps.Client.ImagePull(ctx, frontendTag); pullErr != nil {
 			// Non-fatal: warn and continue without frontend update.
 			deps.Warn(step, fmt.Sprintf("frontend pull failed: %v — continuing without frontend update", pullErr))
 			opts.SkipFrontend = true
@@ -850,20 +893,32 @@ func checkDatabaseHealth(ctx context.Context, deps Deps, composeFile string, res
 // ─── 5.8 Rollback ────────────────────────────────────────────────────────────
 
 // performRollback re-tags previous image IDs from image-state.txt and recreates
-// agent+frontend. It is a best-effort operation; errors are logged as warnings.
+// agent+frontend. Agent re-tag failure is fatal (consistent with rollback.go):
+// recreating without the correct :latest tag would leave the system in a worse state.
+// Frontend re-tag failure is non-fatal (logged as warning).
 func performRollback(ctx context.Context, deps Deps, composeFile string, state currentState, opts UpdateOptions) error {
 	const step = "rollback"
 	deps.StepStarted(step)
 
-	// Re-tag agent.
-	if state.AgentImageID != "" {
-		agentLatest := agentImageName + ":latest"
-		if err := deps.Client.ImageTag(ctx, state.AgentImageID, agentLatest); err != nil {
-			deps.Warn(step, fmt.Sprintf("re-tag agent failed: %v", err))
-		}
+	// Re-tag agent — FATAL. Without a known previous image ID we cannot restore
+	// the previous agent: recreating would reuse whatever :latest currently points
+	// to (possibly the broken new image), so abort instead of reporting a false
+	// rollback success (consistent with rollback.go).
+	if state.AgentImageID == "" {
+		e := cnerr.New("engine.update.rollback: previous agent image ID is unknown",
+			"rollback cannot restore the previous agent image — manual recovery required (docker tag <previous> "+agentImageName+":latest && docker compose up -d)")
+		deps.StepFinished(step, e)
+		return e
+	}
+	agentLatest := agentImageName + ":latest"
+	if err := deps.Client.ImageTag(ctx, state.AgentImageID, agentLatest); err != nil {
+		e := cnerr.Wrap("engine.update.rollback", err,
+			"re-tag agent failed — rollback cannot restore previous agent image")
+		deps.StepFinished(step, e)
+		return e
 	}
 
-	// Re-tag frontend.
+	// Re-tag frontend — non-fatal (warn and continue).
 	if state.FrontendImageID != "" && !opts.SkipFrontend {
 		frontendLatest := frontendImageName + ":latest"
 		if err := deps.Client.ImageTag(ctx, state.FrontendImageID, frontendLatest); err != nil {
@@ -905,8 +960,5 @@ func appendUpdateLog(deps Deps, opts UpdateOptions, ts time.Time, level, message
 		level,
 		message,
 	)
-	// Read existing log, append, write back.
-	existing, _ := deps.FS.ReadFile(updateLogFile)
-	updated := append(existing, []byte(entry)...)
-	_ = deps.FS.WriteFile(updateLogFile, updated, 0o644)
+	_ = deps.FS.AppendFile(updateLogFile, []byte(entry), 0o644)
 }

@@ -191,38 +191,34 @@ func TestUpdate_HappyPath_ExplicitTag(t *testing.T) {
 		t.Error("unexpected rollback")
 	}
 
-	// Verify the explicit tag was pulled (not :latest).
+	// Verify the explicit tag was pulled via ImagePull (not ComposePull, not :latest).
 	agentTag := fmt.Sprintf("%s:%s", agentImageName, version)
 	frontendTag := fmt.Sprintf("%s:%s", frontendImageName, version)
 	foundAgent := false
 	foundFrontend := false
 	for _, call := range mc.FakeClient.Calls {
-		if call.Method == "ComposePull" {
-			for _, arg := range call.Args {
-				if strings.Contains(arg, agentTag) {
-					foundAgent = true
-				}
-				if strings.Contains(arg, frontendTag) {
-					foundFrontend = true
-				}
-				// Verify :latest was NEVER pulled explicitly as the tag.
-				if strings.Contains(arg, ":latest") && !strings.Contains(arg, "NoDeps") {
-					// This is a services list arg; :latest would only appear if we
-					// passed it as a service argument, which we should not.
-					// The services list argument is formatted as "[tag]" — check if
-					// it's the service list containing :latest as a service name.
-					if arg == fmt.Sprintf("[%s:latest]", agentImageName) {
-						t.Errorf("engine pulled :latest tag — must pull explicit version %s", agentTag)
-					}
-				}
+		if call.Method == "ImagePull" && len(call.Args) > 0 {
+			if call.Args[0] == agentTag {
+				foundAgent = true
 			}
+			if call.Args[0] == frontendTag {
+				foundFrontend = true
+			}
+			// Verify :latest was NEVER pulled explicitly.
+			if call.Args[0] == agentImageName+":latest" {
+				t.Errorf("engine pulled :latest tag — must pull explicit version %s", agentTag)
+			}
+		}
+		// ComposePull must NOT be called for image pulls.
+		if call.Method == "ComposePull" {
+			t.Errorf("ComposePull was called — image pulls must use ImagePull instead")
 		}
 	}
 	if !foundAgent {
-		t.Errorf("agent explicit tag %q not found in ComposePull calls; calls: %v", agentTag, mc.FakeClient.Calls)
+		t.Errorf("agent explicit tag %q not found in ImagePull calls; calls: %v", agentTag, mc.FakeClient.Calls)
 	}
 	if !foundFrontend {
-		t.Errorf("frontend explicit tag %q not found in ComposePull calls", frontendTag)
+		t.Errorf("frontend explicit tag %q not found in ImagePull calls", frontendTag)
 	}
 
 	// Verify recreate used --no-deps --force-recreate.
@@ -411,6 +407,9 @@ func TestUpdate_Rollback_HealthFailure(t *testing.T) {
 
 	if !result.RolledBack {
 		t.Error("expected RolledBack=true after health check failure")
+	}
+	if result.RollbackFailed {
+		t.Error("expected RollbackFailed=false when rollback succeeds")
 	}
 
 	// Verify ImageTag was called to restore previous IDs.
@@ -633,11 +632,11 @@ func TestUpdate_DryRun_ZeroWrites(t *testing.T) {
 		}())
 	}
 
-	// No ComposePull, ComposeUp, or ImagePrune calls.
+	// No ImagePull, ComposeUp, or ImagePrune calls.
 	for _, call := range mc.FakeClient.Calls {
 		switch call.Method {
-		case "ComposePull":
-			t.Error("DryRun called ComposePull — must not pull images")
+		case "ImagePull":
+			t.Error("DryRun called ImagePull — must not pull images")
 		case "ComposeUp":
 			t.Error("DryRun called ComposeUp — must not recreate containers")
 		case "ImagePrune":
@@ -858,13 +857,13 @@ func TestUpdate_SkipFrontend(t *testing.T) {
 		t.Fatalf("Update failed: %v", err)
 	}
 
-	// ComposePull must not include frontend tag.
+	// ImagePull must not include frontend tag.
 	frontendTag := fmt.Sprintf("%s:%s", frontendImageName, version)
 	for _, call := range mc.FakeClient.Calls {
-		if call.Method == "ComposePull" {
+		if call.Method == "ImagePull" {
 			for _, arg := range call.Args {
 				if strings.Contains(arg, frontendTag) {
-					t.Errorf("ComposePull included frontend tag when SkipFrontend=true: %v", call.Args)
+					t.Errorf("ImagePull included frontend tag when SkipFrontend=true: %v", call.Args)
 				}
 			}
 		}
@@ -1127,5 +1126,35 @@ func TestUpdate_BackupEnvMode600(t *testing.T) {
 	}
 	if mode != 0o600 {
 		t.Errorf("backup .env mode = %04o, want 0600", mode)
+	}
+}
+
+// TestDetectCurrentState_LatestFails_FallbackToContainer verifies that when
+// ImageInspect(:latest) fails, detectCurrentState falls back to the running
+// container's ImageID.
+func TestDetectCurrentState_LatestFails_FallbackToContainer(t *testing.T) {
+	const agentID = "sha256:abc123"
+
+	mc := &multiInspectClient{
+		FakeClient: &dockerx.FakeClient{
+			ContainerListOut: []dockerx.ContainerState{
+				{Service: "agent", ImageID: agentID, Running: true},
+			},
+		},
+		inspectResponses: []inspectResponse{
+			{err: fmt.Errorf("no such image: agent:latest")},    // agent:latest fails → fallback
+			{err: fmt.Errorf("no such image: frontend:latest")}, // frontend:latest fails → fallback
+		},
+	}
+
+	deps := buildDepsWithFiles(".", nil, mc, &dockerx.FakeHTTPProber{})
+
+	state, err := detectCurrentState(context.Background(), deps, ".", baseOpts("1.8.4"), &UpdateResult{})
+	if err != nil {
+		t.Fatalf("detectCurrentState failed: %v", err)
+	}
+	// Agent fallback: ContainerList returns the agent container's ImageID.
+	if state.AgentImageID != agentID {
+		t.Errorf("AgentImageID = %q, want %q (fallback from container)", state.AgentImageID, agentID)
 	}
 }

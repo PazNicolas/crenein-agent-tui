@@ -120,6 +120,10 @@ type Client interface {
 	// ImagePrune removes dangling images (equivalent to docker image prune -f).
 	ImagePrune(ctx context.Context) error
 
+	// ImagePull pulls a single image by its full reference (e.g. "repo/image:tag").
+	// Unlike ComposePull, this accepts an image ref, not a compose service name.
+	ImagePull(ctx context.Context, ref string) error
+
 	// ContainerList returns the running containers, optionally filtered by
 	// name substring.
 	ContainerList(ctx context.Context, nameFilter string) ([]ContainerState, error)
@@ -127,6 +131,13 @@ type Client interface {
 	// ComposeLogs returns the last n log lines for the given service.
 	// It is read-only and MUST NOT alter container state.
 	ComposeLogs(ctx context.Context, composeFile, service string, tail int) ([]byte, error)
+
+	// ComposeLogsStream streams log lines for the given service to stdout.
+	// When follow is true the child process runs until ctx is cancelled; a
+	// cancellation is not treated as an error (returns nil). When noColor is
+	// true --no-color is passed to compose. tail ≤ 0 disables the --tail flag.
+	// It is read-only and MUST NOT alter container state.
+	ComposeLogsStream(ctx context.Context, composeFile, service string, tail int, follow, noColor bool, stdout io.Writer) error
 }
 
 // CommandRunner runs arbitrary system commands (apt-get, systemctl, openssl,
@@ -176,6 +187,10 @@ type FS interface {
 	// RemoveAll removes path and any children it contains (equivalent to
 	// os.RemoveAll). Removing a non-existent path is not an error.
 	RemoveAll(path string) error
+
+	// AppendFile appends data to the named file, creating it if necessary.
+	// Semantics: O_APPEND|O_CREATE|O_WRONLY; perm is used only on creation.
+	AppendFile(name string, data []byte, perm uint32) error
 }
 
 // FileInfo is a minimal stat result returned by FS.Stat.

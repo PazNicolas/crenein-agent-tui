@@ -89,3 +89,15 @@ func (f *OSFS) ReadDir(path string) ([]string, error) {
 func (f *OSFS) RemoveAll(path string) error {
 	return os.RemoveAll(path)
 }
+
+// AppendFile appends data to the named file (O_APPEND|O_CREATE|O_WRONLY).
+// perm is used only when the file is created.
+func (f *OSFS) AppendFile(name string, data []byte, perm uint32) error {
+	fh, err := os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(perm))
+	if err != nil {
+		return err
+	}
+	defer fh.Close()
+	_, err = fh.Write(data)
+	return err
+}

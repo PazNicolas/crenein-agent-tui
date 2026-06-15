@@ -1,13 +1,15 @@
 > **Estado (2026-06-12): capa de librería implementada.** `internal/release` (manifest schema/validación/seed + cliente con cache + resolución + detección de versión del agente) y `internal/selfupdate` (swap atómico verificado) están hechos y testeados — esto destraba `add-headless-commands` (necesita `internal/release`).
 >
-> **Diferido a un follow-up** (wirean en superficies que aún no existen): 1.4–1.5 (generación de `versions.json` en el workflow + verificación en release real), sección 4 (`cmd/self-update` + integración en `crenein-agent status` — `status` es subcomando de headless), sección 5 (wire del manifest en `crenein-agent update` + indicadores en la TUI Status view — dependen de headless y de `add-tui-dashboard`), y 6.2–6.4 (release real + VM cliente). Se completan después de headless/TUI.
+> **Actualización (2026-06-14): núcleo desbloqueable implementado.** Hecho: 1.4 (generación + validación de `versions.json` en el workflow vía `tools/genmanifest`, asset por `release.extra_files`) y sección 4 salvo 4.4 (`cmd/self-update` completo con `--yes`/`--check`/`--version`/`--force-check`, exit codes 0/10/1, mensajes, tests). El adaptador `release.GitHubReleaseSource` (que `internal/selfupdate` requería) también quedó implementado.
+>
+> **Aún diferido** (wirean en superficies que no existen todavía): 4.4 (integración en `crenein-agent status` — `status` es subcomando de `add-headless-commands`), sección 5 (wire del manifest en `crenein-agent update` + indicadores en la TUI Status view — dependen de `add-headless-commands` y `add-tui-dashboard`), 1.5 + 6.2–6.4 (verificación en release real + VM cliente, validación manual). Se completan después de headless/TUI.
 
 ## 1. Version Manifest — Schema And Publication
 
 - [x] 1.1 Define the `versions.json` schema (Go structs + JSON tags in `internal/release/manifest.go`) matching the design exactly: `agent.latest`, `agent.releases.{X.Y.Z}.{date,image,mongo,notes}`, `cli.latest`, `cli.releases`.
 - [x] 1.2 Implement manifest validation (semver keys, non-empty `image`, `mongo` map contains `"7"` and `"4"`, `latest` exists in `releases`); malformed manifest returns a structured error, never a partial result.
 - [x] 1.3 Add the agent-release seed data file in this repo (current backend history: 1.8.3, 1.8.2, 1.8.1, 1.8.0, 1.6.1) used by the workflow to build the `agent` section.
-- [ ] 1.4 Extend `.github/workflows/release.yml` to generate `versions.json` on each tag (merge seed data + CLI tag being released), validate it, and upload it as a release asset; a validation failure MUST fail the release.
+- [x] 1.4 Extend `.github/workflows/release.yml` to generate `versions.json` on each tag (merge seed data + CLI tag being released), validate it, and upload it as a release asset; a validation failure MUST fail the release. _(Generador `tools/genmanifest` reusa `release.ParseManifest` para validar — exit ≠0 falla el job antes de goreleaser; goreleaser sube el asset vía `release.extra_files`. `agent.latest` se computa como el mayor semver del seed; `cli.releases` lleva solo el tag actual en v1.)_
 - [ ] 1.5 Verify the manifest on the latest release is fetchable via the `releases/latest` asset URL without knowing the tag.
 
 ## 2. Release Client — Manifest Consumption (internal/release/)
@@ -31,11 +33,11 @@
 
 ## 4. CLI Subcommand (cmd/)
 
-- [ ] 4.1 Add `crenein-agent self-update` (cobra) wiring `internal/selfupdate` + `internal/release`, with interactive confirmation showing `current → target` and release notes.
-- [ ] 4.2 Implement flags: `--yes`, `--check` (no modification; exit `0` up to date, `10` update available, `1` error), `--version X.Y.Z`, `--force-check`.
-- [ ] 4.3 Implement user-facing messages: `updated X → Y`, `already up to date (X)`, permission error with `sudo crenein-agent self-update` suggestion, checksum-abort explanation.
+- [x] 4.1 Add `crenein-agent self-update` (cobra) wiring `internal/selfupdate` + `internal/release`, with interactive confirmation showing `current → target` and release notes.
+- [x] 4.2 Implement flags: `--yes`, `--check` (no modification; exit `0` up to date, `10` update available, `1` error), `--version X.Y.Z`, `--force-check`.
+- [x] 4.3 Implement user-facing messages: `updated X → Y`, `already up to date (X)`, permission error with `sudo crenein-agent self-update` suggestion, checksum-abort explanation.
 - [ ] 4.4 Surface agent + CLI update-available status in `crenein-agent status` (human and `--json` output includes `cli_version`, `cli_latest`, `agent_version`, `agent_latest`, `update_available` booleans).
-- [ ] 4.5 Integration-style tests for exit codes and output contracts (`--check` codes, `--json` shape).
+- [x] 4.5 Integration-style tests for exit codes and output contracts (`--check` codes; `--json` NOT implemented — spec only requires `--json` for `crenein-agent status` (task 4.4), not for `self-update`).
 
 ## 5. Update Flow And TUI Integration
 

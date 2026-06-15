@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -29,22 +30,50 @@ func newRootCmd() *cobra.Command {
 			"dashboard, and self-update arrive in later releases.",
 		Version:       build.version,
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
 	}
+
+	// Unknown or malformed flags → exit 64 (EX_USAGE) instead of exit 1.
+	// SetFlagErrorFunc is inherited by all subcommands when cobra propagates it.
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return usageError(err.Error())
+	})
+
+	// Persistent flags inherited by all subcommands.
+	root.PersistentFlags().BoolVar(&globalFlags.quiet, "quiet", false, "suppress informational progress output")
+	root.PersistentFlags().BoolVar(&globalFlags.noColor, "no-color", false, "disable ANSI color output")
 
 	// Render --version with the same rich string as the `version` subcommand.
 	root.SetVersionTemplate(versionString(build) + "\n")
 
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newSelfUpdateCmd())
+	root.AddCommand(newInstallCmd())
+	root.AddCommand(newUpdateCmd())
+	root.AddCommand(newDoctorCmd())
+	root.AddCommand(newStatusCmd())
+	root.AddCommand(newLogsCmd())
+	root.AddCommand(newRollbackCmd())
 	return root
 }
 
 // Execute builds the command tree with the injected build metadata and runs it.
 // cobra prints the error (and a usage hint) to stderr itself; we only translate
 // a failure into a non-zero exit status.
+// When the error carries an exitCodeError the embedded code is used instead of 1.
 func Execute(version, commit, date string) {
 	build = buildInfo{version: version, commit: commit, date: date}
 	if err := newRootCmd().Execute(); err != nil {
+		var ecErr *exitCodeError
+		if errors.As(err, &ecErr) {
+			os.Exit(ecErr.code)
+		}
 		os.Exit(1)
 	}
+}
+
+// globalFlags holds the values of the root-level persistent flags.
+var globalFlags struct {
+	quiet   bool
+	noColor bool
 }
