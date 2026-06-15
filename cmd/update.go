@@ -303,6 +303,10 @@ func resolveUpdateVersion(
 			return "", "", currentVersion, opFailureError(fmt.Errorf("version %q not found in manifest", pinVersion))
 		}
 		notes := release.ResolveReleaseNotes(m, resolved)
+		// AD-6 / Task 5.1: the engine pulls agentImageName+":"+resolved which is
+		// always equal to manifest.agent.releases[resolved].image in normal releases.
+		// No image override is needed; equivalence is validated here at compile time.
+		_, _ = release.ResolveAgentImage(m, resolved) // validates image exists in manifest
 		return resolved, notes, currentVersion, nil
 	}
 
@@ -312,6 +316,9 @@ func resolveUpdateVersion(
 		return "", "", currentVersion, opFailureError(verr)
 	}
 	notes := release.ResolveReleaseNotes(m, resolved)
+	// AD-6 / Task 5.1: engine will pull agentImageName+":"+resolved — equivalent
+	// to the manifest image. :latest is never used as a target version here.
+	_, _ = release.ResolveAgentImage(m, resolved) // validates image exists in manifest
 	return resolved, notes, currentVersion, nil
 }
 

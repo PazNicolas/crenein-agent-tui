@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/PazNicolas/crenein-agent-tui/internal/detect"
 	"github.com/PazNicolas/crenein-agent-tui/internal/dockerx"
+	"github.com/PazNicolas/crenein-agent-tui/internal/release"
 )
 
 // ─── Fixed service list ────────────────────────────────────────────────────────
@@ -46,6 +48,10 @@ type statusDeps struct {
 
 	// now returns the current time (injectable for deterministic tests).
 	now func() time.Time
+
+	// manifestClient fetches the version manifest for update-available info.
+	// When nil, a real ManifestClient is constructed. Set to a fake in tests.
+	manifestClient release.Client
 }
 
 // ─── Compose-file image tag extraction ────────────────────────────────────────
@@ -255,9 +261,23 @@ type statusJSONDoc struct {
 	Agent         statusAgentInfo  `json:"agent"`
 	Mongo         statusMongoInfo  `json:"mongo"`
 	Services      []statusSvcEntry `json:"services"`
+	// Updates is an additive field (schema_version 1). Best-effort — null when
+	// the manifest is unreachable.
+	Updates *statusUpdatesInfo `json:"updates,omitempty"`
 	// Warnings is an additive field (schema_version 1). It carries non-fatal
 	// issues surfaced during collection, e.g. composePs errors. May be null or absent.
 	Warnings []string `json:"warnings,omitempty"`
+}
+
+// statusUpdatesInfo is the "updates" object in the status JSON doc.
+type statusUpdatesInfo struct {
+	CLIVersion           string  `json:"cli_version"`
+	CLILatest            string  `json:"cli_latest"`
+	CLIUpdateAvailable   bool    `json:"cli_update_available"`
+	AgentVersion         string  `json:"agent_version"`
+	AgentLatest          string  `json:"agent_latest"`
+	AgentUpdateAvailable bool    `json:"agent_update_available"`
+	LastChecked          *string `json:"last_checked"`
 }
 
 type statusAgentInfo struct {
@@ -286,7 +306,8 @@ type statusSvcEntry struct {
 // collectStatus queries compose + version and builds the JSON doc plus a flag
 // indicating whether the stack is fully running, and an optional warning string
 // describing any non-fatal collection error (e.g. composePs failure).
-func collectStatus(ctx context.Context, deps statusDeps, installDir string) (statusJSONDoc, bool, string) {
+// stderr is used for best-effort manifest warnings only.
+func collectStatus(ctx context.Context, deps statusDeps, installDir string, stderr io.Writer) (statusJSONDoc, bool, string) {
 	nowFn := deps.now
 	if nowFn == nil {
 		nowFn = time.Now
@@ -411,7 +432,56 @@ func collectStatus(ctx context.Context, deps statusDeps, installDir string) (sta
 		Services: services,
 		Warnings: docWarnings,
 	}
+
+	// Best-effort update info via manifest (24h cache respected; never fails status).
+	if deps.manifestClient != nil {
+		doc.Updates = fetchUpdatesInfo(ctx, deps.manifestClient, cliVersion, agentVersion, stderr)
+	}
+
 	return doc, allRunning, composePsWarning
+}
+
+// fetchUpdatesInfo fetches the version manifest (cache-first) and returns the
+// update availability info. Returns nil on any manifest error — update info is
+// best-effort and must never cause status to fail.
+func fetchUpdatesInfo(ctx context.Context, mc release.Client, cliVersion, agentVersion string, stderr io.Writer) *statusUpdatesInfo {
+	m, fetchErr := mc.FetchManifest(ctx, false)
+	if fetchErr != nil {
+		fmt.Fprintf(stderr, "warning: could not fetch version manifest: %v\n", fetchErr)
+		return &statusUpdatesInfo{
+			CLIVersion:           cliVersion,
+			CLILatest:            "",
+			CLIUpdateAvailable:   false,
+			AgentVersion:         agentVersion,
+			AgentLatest:          "",
+			AgentUpdateAvailable: false,
+			LastChecked:          nil,
+		}
+	}
+
+	// dev build: never report CLI update available.
+	localCLI := cliVersion
+	if localCLI == "dev" || localCLI == "" {
+		localCLI = "" // ComputeUpdateInfo treats "" as unknown → UpdateUnknown
+	}
+
+	info := release.ComputeUpdateInfo(m, localCLI, agentVersion)
+
+	var lastCheckedStr *string
+	if !m.FetchedAt.IsZero() {
+		s := m.FetchedAt.UTC().Format(time.RFC3339)
+		lastCheckedStr = &s
+	}
+
+	return &statusUpdatesInfo{
+		CLIVersion:           cliVersion,
+		CLILatest:            info.CLILatest,
+		CLIUpdateAvailable:   info.CLIStatus == release.UpdateAvailable,
+		AgentVersion:         agentVersion,
+		AgentLatest:          info.AgentLatest,
+		AgentUpdateAvailable: info.AgentStatus == release.UpdateAvailable,
+		LastChecked:          lastCheckedStr,
+	}
 }
 
 // ─── Human renderer ───────────────────────────────────────────────────────────
@@ -421,7 +491,14 @@ func renderStatusHuman(w io.Writer, doc statusJSONDoc) {
 	fmt.Fprintf(w, "Install dir:   %s\n", doc.InstallDir)                                          //nolint:errcheck
 	fmt.Fprintf(w, "Agent version: %s (source: %s)\n", doc.Agent.Version, doc.Agent.VersionSource) //nolint:errcheck
 	fmt.Fprintf(w, "Mongo:         %s (major: %s)\n", doc.Mongo.Image, doc.Mongo.Major)            //nolint:errcheck
-	fmt.Fprintln(w)                                                                                //nolint:errcheck
+
+	if doc.Updates != nil {
+		fmt.Fprintln(w) //nolint:errcheck
+		renderUpdateLine(w, "CLI", doc.Updates.CLIVersion, doc.Updates.CLILatest, doc.Updates.CLIUpdateAvailable)
+		renderUpdateLine(w, "Agent", doc.Updates.AgentVersion, doc.Updates.AgentLatest, doc.Updates.AgentUpdateAvailable)
+	}
+
+	fmt.Fprintln(w) //nolint:errcheck
 
 	// Aligned service table.
 	const hdrFmt = "%-12s  %-40s  %-9s  %-11s  %s\n"
@@ -436,6 +513,18 @@ func renderStatusHuman(w io.Writer, doc statusJSONDoc) {
 			uptime = svc.StatusText
 		}
 		fmt.Fprintf(w, rowFmt, svc.Name, svc.Image, svc.State, svc.Health, uptime) //nolint:errcheck
+	}
+}
+
+// renderUpdateLine writes one update-available line for a component.
+// Format: "<label>: <version> (<update available: <latest>> | up to date | unknown)"
+func renderUpdateLine(w io.Writer, label, version, latest string, updateAvailable bool) {
+	if updateAvailable && latest != "" {
+		fmt.Fprintf(w, "%-6s %s (update available: %s)\n", label+":", version, latest) //nolint:errcheck
+	} else if latest == "" || latest == "unknown" {
+		fmt.Fprintf(w, "%-6s %s (update status: unknown)\n", label+":", version) //nolint:errcheck
+	} else {
+		fmt.Fprintf(w, "%-6s %s (up to date)\n", label+":", version) //nolint:errcheck
 	}
 }
 
@@ -522,6 +611,12 @@ func newStatusDepsReal() statusDeps {
 		return "unknown", "unknown"
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = "/root"
+	}
+	mc := release.NewManifestClient(prober, nil, fs, homeDir, time.Now)
+
 	return statusDeps{
 		composePs: func(ctx context.Context, composeFile string, services []string) ([]dockerx.ContainerState, error) {
 			return composeClient(ctx).ComposePs(ctx, composeFile, services)
@@ -530,6 +625,7 @@ func newStatusDepsReal() statusDeps {
 		readFile:           fs.ReadFile,
 		readDir:            fs.ReadDir,
 		now:                time.Now,
+		manifestClient:     mc,
 	}
 }
 
@@ -580,7 +676,7 @@ func runStatus(
 	}
 
 	// Collect status.
-	doc, allRunning, collectionWarning := collectStatus(ctx, deps, installDir)
+	doc, allRunning, collectionWarning := collectStatus(ctx, deps, installDir, stderr)
 
 	// Surface any non-fatal collection warning to stderr before emitting output.
 	if collectionWarning != "" {

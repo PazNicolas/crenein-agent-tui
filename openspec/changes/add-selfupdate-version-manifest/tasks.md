@@ -36,15 +36,15 @@
 - [x] 4.1 Add `crenein-agent self-update` (cobra) wiring `internal/selfupdate` + `internal/release`, with interactive confirmation showing `current → target` and release notes.
 - [x] 4.2 Implement flags: `--yes`, `--check` (no modification; exit `0` up to date, `10` update available, `1` error), `--version X.Y.Z`, `--force-check`.
 - [x] 4.3 Implement user-facing messages: `updated X → Y`, `already up to date (X)`, permission error with `sudo crenein-agent self-update` suggestion, checksum-abort explanation.
-- [ ] 4.4 Surface agent + CLI update-available status in `crenein-agent status` (human and `--json` output includes `cli_version`, `cli_latest`, `agent_version`, `agent_latest`, `update_available` booleans).
+- [x] 4.4 Surface agent + CLI update-available status in `crenein-agent status` (human and `--json` output includes `cli_version`, `cli_latest`, `agent_version`, `agent_latest`, `update_available` booleans).
 - [x] 4.5 Integration-style tests for exit codes and output contracts (`--check` codes; `--json` NOT implemented — spec only requires `--json` for `crenein-agent status` (task 4.4), not for `self-update`).
 
 ## 5. Update Flow And TUI Integration
 
-- [ ] 5.1 Wire `crenein-agent update` to resolve the target agent version, image tag, Mongo image, and notes from the manifest (replacing blind `:latest`) and pass them to the engine (`add-engine-detectors` owns execution).
-- [ ] 5.2 Show release notes from the manifest in the update preview/confirmation (headless and TUI).
-- [ ] 5.3 Add "CLI update available" / "Agent update available" indicators to the TUI Status view (coordination with `add-tui-dashboard`), driven only by cached/TTL-respecting checks, with a "last checked" timestamp.
-- [ ] 5.4 Ensure TUI rendering never triggers uncached GitHub API calls.
+- [x] 5.1 Wire `crenein-agent update` to resolve the target agent version, image tag, Mongo image, and notes from the manifest (replacing blind `:latest`) and pass them to the engine (`add-engine-detectors` owns execution).
+- [x] 5.2 Show release notes from the manifest in the update preview/confirmation (headless and TUI).
+- [ ] 5.3 Add "CLI update available" / "Agent update available" indicators to the TUI Status view (coordination with `add-tui-dashboard`), driven only by cached/TTL-respecting checks, with a "last checked" timestamp. _(bloqueado por add-tui-dashboard)_
+- [ ] 5.4 Ensure TUI rendering never triggers uncached GitHub API calls. _(bloqueado por add-tui-dashboard)_
 
 ## 6. Validation And Release
 

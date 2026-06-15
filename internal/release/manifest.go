@@ -60,6 +60,9 @@ type CLISection struct {
 type Manifest struct {
 	Agent AgentSection `json:"agent"`
 	CLI   CLISection   `json:"cli"`
+	// FetchedAt is populated by FetchManifest and is never serialized to JSON.
+	// It holds the time when the manifest was last fetched or read from cache.
+	FetchedAt time.Time `json:"-"`
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -403,21 +406,21 @@ func (c *cacheClient) cachePath() string {
 	return c.homeDir + "/" + cacheDir + "/" + cacheFile
 }
 
-// readCache reads the cache file and returns the manifest JSON if it is fresh
-// (within TTL). Returns nil when absent, corrupt, or expired.
-func (c *cacheClient) readCache() []byte {
+// readCacheWithTime reads the cache file and returns (manifestJSON, fetchedAt)
+// when fresh. Returns (nil, zero) when absent, corrupt, or expired.
+func (c *cacheClient) readCacheWithTime() ([]byte, time.Time) {
 	data, err := c.fs.ReadFile(c.cachePath())
 	if err != nil {
-		return nil // absent
+		return nil, time.Time{} // absent
 	}
 	var entry versionCache
 	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil // corrupt → treat as absent
+		return nil, time.Time{} // corrupt → treat as absent
 	}
 	if c.now().Sub(entry.FetchedAt) > cacheTTL {
-		return nil // expired
+		return nil, time.Time{} // expired
 	}
-	return entry.ManifestJSON
+	return entry.ManifestJSON, entry.FetchedAt
 }
 
 // writeCache persists manifestJSON to disk (creates dir+file as needed).
@@ -499,9 +502,10 @@ func NewManifestClient(
 // FetchManifest implements Client.FetchManifest.
 func (mc *ManifestClient) FetchManifest(ctx context.Context, bypassCache bool) (*Manifest, *cnerr.Error) {
 	if !bypassCache {
-		if cached := mc.cache.readCache(); cached != nil {
-			m, verr := ParseManifest(cached)
+		if cachedRaw, cachedAt := mc.cache.readCacheWithTime(); cachedRaw != nil {
+			m, verr := ParseManifest(cachedRaw)
 			if verr == nil {
+				m.FetchedAt = cachedAt
 				return m, nil
 			}
 			// Cached manifest is invalid — fall through to live fetch.
@@ -549,8 +553,10 @@ func (mc *ManifestClient) FetchManifest(ctx context.Context, bypassCache bool) (
 		return nil, verr
 	}
 
+	now := mc.cache.now()
 	// Persist to cache (best-effort; failure does not abort the operation).
 	_ = mc.cache.writeCache(manifestJSON)
+	m.FetchedAt = now
 
 	return m, nil
 }

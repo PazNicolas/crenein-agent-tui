@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PazNicolas/crenein-agent-tui/internal/cnerr"
 	"github.com/PazNicolas/crenein-agent-tui/internal/dockerx"
+	"github.com/PazNicolas/crenein-agent-tui/internal/release"
 )
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -693,5 +695,302 @@ func TestStatus_RestartingState(t *testing.T) {
 	}
 	if redisSvc.State != "restarting" {
 		t.Errorf("redis.state = %q, want restarting", redisSvc.State)
+	}
+}
+
+// ─── Task 4.4 — update-available in status ────────────────────────────────────
+
+// statusManifest builds a minimal valid Manifest for status update tests.
+// cliLatest and agentLatest control the "latest" version fields.
+func statusManifest(cliLatest, agentLatest string) *release.Manifest {
+	return &release.Manifest{
+		Agent: release.AgentSection{
+			Latest: agentLatest,
+			Releases: map[string]release.AgentRelease{
+				agentLatest: {
+					Date:  "2026-06-14",
+					Image: "crenein/c-network-agent-back:" + agentLatest,
+					Mongo: map[string]string{"7": "mongo7", "4": "mongo4"},
+					Notes: "Agent notes",
+				},
+			},
+		},
+		CLI: release.CLISection{
+			Latest: cliLatest,
+			Releases: map[string]release.CLIRelease{
+				cliLatest: {Date: "2026-06-14", Notes: "CLI notes"},
+			},
+		},
+	}
+}
+
+// allRunningDepsWithManifest returns allRunningDeps plus the given manifest client.
+func allRunningDepsWithManifest(mc release.Client) statusDeps {
+	d := allRunningDeps()
+	d.manifestClient = mc
+	return d
+}
+
+// TestStatus_UpdateAvailable_JSON_UpdatesObject verifies the "updates" object
+// appears in --json when an update is available and has all required fields.
+func TestStatus_UpdateAvailable_JSON_UpdatesObject(t *testing.T) {
+	fetchedAt := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	m := statusManifest("0.2.0", "1.9.0")
+	m.FetchedAt = fetchedAt
+
+	// CLI: 0.1.0 < 0.2.0 → update available.
+	// Agent: 1.8.3 < 1.9.0 → update available.
+	mc := &fakeManifestClient{manifest: m}
+	deps := allRunningDepsWithManifest(mc)
+	// Override build.version via test helper approach: use collectStatus directly
+	// with a known cliVersion. However, build.version is package-level so we test
+	// the integration via the full command — build.version == "" in tests → "dev".
+	// Instead, supply a version by setting it and restoring.
+	origVersion := build.version
+	build.version = "0.1.0"
+	defer func() { build.version = origVersion }()
+
+	res := runStatusCmd(t, []string{"--json"}, deps)
+	if res.exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr: %q", res.exitCode, res.stderr)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(res.stdout), &raw); err != nil {
+		t.Fatalf("invalid JSON: %v\nstdout: %q", err, res.stdout)
+	}
+
+	updatesRaw, ok := raw["updates"]
+	if !ok {
+		t.Fatal("top-level field 'updates' missing from JSON output")
+	}
+
+	var updates statusUpdatesInfo
+	if err := json.Unmarshal(updatesRaw, &updates); err != nil {
+		t.Fatalf("updates is not a valid JSON object: %v", err)
+	}
+
+	if updates.CLIVersion != "0.1.0" {
+		t.Errorf("updates.cli_version = %q, want 0.1.0", updates.CLIVersion)
+	}
+	if updates.CLILatest != "0.2.0" {
+		t.Errorf("updates.cli_latest = %q, want 0.2.0", updates.CLILatest)
+	}
+	if !updates.CLIUpdateAvailable {
+		t.Error("updates.cli_update_available should be true")
+	}
+	if updates.AgentVersion != "1.8.3" {
+		t.Errorf("updates.agent_version = %q, want 1.8.3", updates.AgentVersion)
+	}
+	if updates.AgentLatest != "1.9.0" {
+		t.Errorf("updates.agent_latest = %q, want 1.9.0", updates.AgentLatest)
+	}
+	if !updates.AgentUpdateAvailable {
+		t.Error("updates.agent_update_available should be true")
+	}
+	if updates.LastChecked == nil {
+		t.Fatal("updates.last_checked should not be null")
+	}
+	wantLastChecked := fetchedAt.UTC().Format(time.RFC3339)
+	if *updates.LastChecked != wantLastChecked {
+		t.Errorf("updates.last_checked = %q, want %q", *updates.LastChecked, wantLastChecked)
+	}
+}
+
+// TestStatus_UpdateUpToDate_JSON verifies update fields when CLI and agent are
+// already at the latest version.
+func TestStatus_UpdateUpToDate_JSON(t *testing.T) {
+	fetchedAt := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	m := statusManifest("0.1.0", "1.8.3")
+	m.FetchedAt = fetchedAt
+
+	mc := &fakeManifestClient{manifest: m}
+	deps := allRunningDepsWithManifest(mc)
+
+	origVersion := build.version
+	build.version = "0.1.0"
+	defer func() { build.version = origVersion }()
+
+	res := runStatusCmd(t, []string{"--json"}, deps)
+	if res.exitCode != 0 {
+		t.Fatalf("exit code = %d; stderr: %q", res.exitCode, res.stderr)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(res.stdout), &raw); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	var updates statusUpdatesInfo
+	if err := json.Unmarshal(raw["updates"], &updates); err != nil {
+		t.Fatalf("updates not a valid object: %v", err)
+	}
+	if updates.CLIUpdateAvailable {
+		t.Error("cli_update_available should be false when already up to date")
+	}
+	if updates.AgentUpdateAvailable {
+		t.Error("agent_update_available should be false when already up to date")
+	}
+}
+
+// TestStatus_ManifestFetchFails_StatusDoesNotFail verifies that a manifest
+// fetch error does NOT cause status to fail — exit code is unchanged and
+// update booleans are false.
+func TestStatus_ManifestFetchFails_StatusDoesNotFail(t *testing.T) {
+	fetchErr := cnerr.New("release.FetchManifest: network unavailable", "check connectivity")
+	mc := &fakeManifestClient{fetchErr: fetchErr}
+	deps := allRunningDepsWithManifest(mc)
+
+	origVersion := build.version
+	build.version = "0.1.0"
+	defer func() { build.version = origVersion }()
+
+	// Human mode: must not fail.
+	resHuman := runStatusCmd(t, nil, deps)
+	if resHuman.exitCode != 0 {
+		t.Errorf("human: exit code = %d, want 0 (manifest error must not change exit code)", resHuman.exitCode)
+	}
+	if !strings.Contains(resHuman.stderr, "warning") {
+		t.Errorf("human: stderr should contain 'warning' about manifest fetch failure; got: %q", resHuman.stderr)
+	}
+
+	// JSON mode: must not fail, updates object present with false booleans.
+	resJSON := runStatusCmd(t, []string{"--json"}, deps)
+	if resJSON.exitCode != 0 {
+		t.Errorf("json: exit code = %d, want 0", resJSON.exitCode)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(resJSON.stdout), &raw); err != nil {
+		t.Fatalf("invalid JSON: %v\nstdout: %q", err, resJSON.stdout)
+	}
+
+	updatesRaw, ok := raw["updates"]
+	if !ok {
+		t.Fatal("updates field should be present even when manifest fetch fails")
+	}
+	var updates statusUpdatesInfo
+	if err := json.Unmarshal(updatesRaw, &updates); err != nil {
+		t.Fatalf("updates not a valid object: %v", err)
+	}
+	if updates.CLIUpdateAvailable {
+		t.Error("cli_update_available should be false when manifest unreachable")
+	}
+	if updates.AgentUpdateAvailable {
+		t.Error("agent_update_available should be false when manifest unreachable")
+	}
+	if updates.LastChecked != nil {
+		t.Errorf("last_checked should be null when manifest unreachable, got %q", *updates.LastChecked)
+	}
+}
+
+// TestStatus_DevBuild_NoCLIUpdateAvailable verifies that a dev build (version="")
+// never reports cli_update_available=true.
+func TestStatus_DevBuild_NoCLIUpdateAvailable(t *testing.T) {
+	m := statusManifest("0.2.0", "1.8.3")
+	m.FetchedAt = time.Now()
+	mc := &fakeManifestClient{manifest: m}
+	deps := allRunningDepsWithManifest(mc)
+
+	// build.version is "" in test builds (dev build).
+	origVersion := build.version
+	build.version = ""
+	defer func() { build.version = origVersion }()
+
+	res := runStatusCmd(t, []string{"--json"}, deps)
+	if res.exitCode != 0 {
+		t.Fatalf("exit code = %d; stderr: %q", res.exitCode, res.stderr)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(res.stdout), &raw); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	var updates statusUpdatesInfo
+	if err := json.Unmarshal(raw["updates"], &updates); err != nil {
+		t.Fatalf("updates not valid: %v", err)
+	}
+	if updates.CLIUpdateAvailable {
+		t.Error("cli_update_available must be false for dev builds")
+	}
+}
+
+// TestStatus_UpdateAvailable_Human_Lines verifies that update-available info
+// appears in human-readable output.
+func TestStatus_UpdateAvailable_Human_Lines(t *testing.T) {
+	m := statusManifest("0.2.0", "1.9.0")
+	m.FetchedAt = time.Now()
+	mc := &fakeManifestClient{manifest: m}
+	deps := allRunningDepsWithManifest(mc)
+
+	origVersion := build.version
+	build.version = "0.1.0"
+	defer func() { build.version = origVersion }()
+
+	res := runStatusCmd(t, nil, deps)
+	if res.exitCode != 0 {
+		t.Fatalf("exit code = %d; stderr: %q", res.exitCode, res.stderr)
+	}
+	if !strings.Contains(res.stdout, "update available") {
+		t.Errorf("human output should contain 'update available'; got: %q", res.stdout)
+	}
+	if !strings.Contains(res.stdout, "0.2.0") {
+		t.Errorf("human output should show CLI latest 0.2.0; got: %q", res.stdout)
+	}
+}
+
+// TestStatus_SchemaVersion1_WithUpdates verifies schema_version stays 1 after
+// adding the updates object.
+func TestStatus_SchemaVersion1_WithUpdates(t *testing.T) {
+	m := statusManifest("0.1.0", "1.8.3")
+	m.FetchedAt = time.Now()
+	mc := &fakeManifestClient{manifest: m}
+	deps := allRunningDepsWithManifest(mc)
+
+	origVersion := build.version
+	build.version = "0.1.0"
+	defer func() { build.version = origVersion }()
+
+	res := runStatusCmd(t, []string{"--json"}, deps)
+	var doc statusJSONDoc
+	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if doc.SchemaVersion != 1 {
+		t.Errorf("schema_version = %d, want 1", doc.SchemaVersion)
+	}
+}
+
+// TestStatus_ExitCode_NotChangedByManifest verifies that degraded-stack exit
+// code is NOT affected by the manifest (offline or online).
+func TestStatus_ExitCode_NotChangedByManifest(t *testing.T) {
+	states := []dockerx.ContainerState{
+		{Service: "agent", Status: "Up 1 day", Running: true},
+		{Service: "frontend", Status: "Up 1 day", Running: true},
+		{Service: "mongodb", Status: "Up 1 day", Running: true},
+		{Service: "influxdb", Status: "Up 1 day", Running: true},
+		{Service: "redis", Status: "Exited (0) 1 hour ago", Running: false},
+	}
+	fs := dockerx.NewFakeFS(map[string][]byte{
+		"./docker-compose.yml": []byte(validComposeContent),
+	})
+	baseDeps := statusDeps{
+		composePs: func(_ context.Context, _ string, _ []string) ([]dockerx.ContainerState, error) {
+			return states, nil
+		},
+		detectAgentVersion: func(_ context.Context) (string, string) { return "1.8.3", "health" },
+		readFile:           fs.ReadFile,
+		readDir:            func(string) ([]string, error) { return nil, nil },
+		installDir:         ".",
+		now:                func() time.Time { return fixedStatusNow },
+	}
+
+	fetchErr := cnerr.New("net error", "check connectivity")
+	mc := &fakeManifestClient{fetchErr: fetchErr}
+	baseDeps.manifestClient = mc
+
+	res := runStatusCmd(t, []string{"--json"}, baseDeps)
+	if res.exitCode != ExitOpFailure {
+		t.Errorf("exit code = %d, want %d (degraded must remain degraded regardless of manifest)", res.exitCode, ExitOpFailure)
 	}
 }
