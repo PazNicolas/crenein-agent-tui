@@ -175,6 +175,27 @@ func TestRootModelViewTooSmallRecovery(t *testing.T) {
 	}
 }
 
+func TestRootModelLogoResponsive(t *testing.T) {
+	// The wordmark tagline is identical across profiles, so it's a stable probe
+	// for whether the banner is rendered.
+	const taglineFragment = "your network, your business"
+
+	m := newTestModel()
+	m.width = 100
+
+	// Just below the threshold → banner hidden so the view keeps its room.
+	m.height = logoMinHeight - 1
+	if out := m.View(); strings.Contains(out, taglineFragment) {
+		t.Errorf("at height %d the logo banner should be hidden, but it was shown", m.height)
+	}
+
+	// At the threshold → banner visible.
+	m.height = logoMinHeight
+	if out := m.View(); !strings.Contains(out, taglineFragment) {
+		t.Errorf("at height %d the logo banner should be visible, but it was not", m.height)
+	}
+}
+
 func TestRootModelViewMonoProfile(t *testing.T) {
 	// 7.3: NO_COLOR / mono profile — verify no ANSI color sequences in output
 	// and that status glyphs use text fallbacks.

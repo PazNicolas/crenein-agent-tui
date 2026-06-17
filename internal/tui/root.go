@@ -21,6 +21,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// logoMinHeight is the terminal height at or above which the CRENEIN wordmark
+// banner is shown above the header. Below it (down to the 24-row minimum) the
+// banner is hidden so the active view keeps its room. The compact 3-row logo
+// keeps this threshold low so it shows on smaller terminals too.
+const logoMinHeight = 26
+
 // ViewID identifies which pane is currently active.
 type ViewID int
 
@@ -178,10 +184,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Propagate to active child view so it can reflow its content.
+		// Propagate to active child view so it can reflow its content. When the
+		// logo banner is visible it consumes rows at the top, so the child gets
+		// a reduced height to avoid overflowing the frame.
+		childMsg := msg
+		if m.logoVisible() {
+			childMsg.Height = max(msg.Height-m.logoRows(), 1)
+		}
 		active := m.activeView()
 		if child, ok := m.views[active]; ok {
-			updated, _ := child.Update(msg)
+			updated, _ := child.Update(childMsg)
 			m.views[active] = updated
 		}
 		return m, nil
@@ -277,6 +289,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the full TUI frame.
+// logoVisible reports whether the wordmark banner should be shown at the
+// current terminal height.
+func (m Model) logoVisible() bool { return m.height >= logoMinHeight }
+
+// logoRows is the number of rows the banner occupies when visible: the wordmark
+// art lines plus a blank separator and the tagline.
+func (m Model) logoRows() int {
+	return len(m.profile.LogoLines()) + 2
+}
+
+// renderLogo renders the centered wordmark banner (art + tagline) for the
+// current profile and width.
+func (m Model) renderLogo() string {
+	lines := m.profile.LogoLines()
+	style := m.profile.LogoStyle()
+
+	// Left-aligned, with a one-space indent matching the header's left padding.
+	const indent = " "
+	out := make([]string, 0, len(lines)+2)
+	for _, ln := range lines {
+		out = append(out, indent+style.Render(ln))
+	}
+	// Tagline beneath the wordmark, same indent.
+	out = append(out, "", indent+m.profile.FooterStyle().Render(m.profile.LogoTagline()))
+
+	return strings.Join(out, "\n")
+}
+
 func (m Model) View() string {
 	// Minimum terminal size guard.
 	if m.width < 80 || m.height < 24 {
@@ -297,22 +337,32 @@ func (m Model) View() string {
 		"s:Status  i:Install  u:Update  d:Doctor  l:Logs  esc:Back  q:Quit",
 	)
 
-	// Body: active view gets height-2 rows.
+	// Body: active view content.
 	var body string
 	if child, ok := m.views[active]; ok {
 		body = child.View()
 	}
 
+	// chrome is the number of rows used by header + footer + (optional banner).
+	chrome := 2
+	if m.logoVisible() {
+		chrome += m.logoRows()
+	}
+
 	// Quit-confirmation overlay appended when needed.
 	if m.quitting {
 		lines := strings.Split(body, "\n")
-		// Pad body to height-2 lines so the confirmation is always at the bottom.
-		for len(lines) < m.height-2 {
+		// Pad body so the confirmation is always at the bottom of the frame.
+		for len(lines) < m.height-chrome {
 			lines = append(lines, "")
 		}
 		lines = append(lines, "Operation running. Press y to confirm quit, n to cancel.")
 		body = strings.Join(lines, "\n")
 	}
 
-	return header + "\n" + body + "\n" + footer
+	frame := header + "\n" + body + "\n" + footer
+	if m.logoVisible() {
+		frame = m.renderLogo() + "\n" + frame
+	}
+	return frame
 }

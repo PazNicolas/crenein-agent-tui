@@ -91,3 +91,13 @@ func TestRootModelGoldenMono_Logs(t *testing.T) {
 	out := mm.View()
 	golden.RequireEqual(t, []byte(out))
 }
+
+// TestRootModelGoldenMono_LogoBanner captures the mono output at a tall terminal
+// (height ≥ logoMinHeight) where the CRENEIN wordmark banner is shown above the
+// header. newTestModel() is 120×40 (mono), so the banner is visible. This pins
+// the pure-ASCII fallback art used by mono / NO_COLOR / dumb terminals.
+func TestRootModelGoldenMono_LogoBanner(t *testing.T) {
+	m := newTestModel() // 120×40 mono → banner visible
+	out := m.View()
+	golden.RequireEqual(t, []byte(out))
+}

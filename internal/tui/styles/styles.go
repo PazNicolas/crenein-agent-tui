@@ -6,6 +6,7 @@ package styles
 
 import (
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -108,6 +109,34 @@ func (p Profile) ActiveViewStyle() lipgloss.Style {
 // Color profile: bold cyan.
 // Mono profile: bold only.
 func (p Profile) TitleStyle() lipgloss.Style {
+	s := lipgloss.NewStyle().Bold(true)
+	if p == ProfileColor {
+		s = s.Foreground(lipgloss.Color("#00BFFF"))
+	}
+	return s
+}
+
+// logoWordmark is the CRENEIN wordmark rendered with a compact pure-ASCII figlet
+// font ("cybermedium"): three rows, so it fits smaller terminals and renders
+// cleanly everywhere (color, mono, NO_COLOR, dumb terminals). The brand color is
+// applied by LogoStyle, not baked into the glyphs.
+const logoWordmark = `____ ____ ____ _  _ ____ _ _  _
+|    |__/ |___ |\ | |___ | |\ |
+|___ |  \ |___ | \| |___ | | \|`
+
+// LogoLines returns the CRENEIN wordmark banner as individual lines.
+func (p Profile) LogoLines() []string {
+	return strings.Split(logoWordmark, "\n")
+}
+
+// LogoTagline returns the brand tagline shown beneath the wordmark.
+func (p Profile) LogoTagline() string {
+	return "your network, your business, our mission"
+}
+
+// LogoStyle returns the lipgloss style for the wordmark banner.
+// Color profile: bold cyan brand accent; mono profile: plain (bold only).
+func (p Profile) LogoStyle() lipgloss.Style {
 	s := lipgloss.NewStyle().Bold(true)
 	if p == ProfileColor {
 		s = s.Foreground(lipgloss.Color("#00BFFF"))
