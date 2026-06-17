@@ -16,7 +16,7 @@
 - [x] 3.1 Write `install.sh` (bash, `set -euo pipefail`): root check (exit 5), OS/arch detection from `uname -s` / `uname -m` mapping `x86_64→amd64`, `aarch64|arm64→arm64` (unsupported → exit 1), dependency check for `curl`/`tar`/`sha256sum`/`mktemp` (missing → exit 2).
 - [x] 3.2 Implement latest-release resolution by following the `https://github.com/PazNicolas/crenein-agent-tui/releases/latest` redirect to extract `vX.Y.Z`; support an optional explicit version argument (`install.sh v0.1.0`); resolution or download failure → exit 3.
 - [x] 3.3 Implement download of `crenein-agent_X.Y.Z_linux_${ARCH}.tar.gz` + `checksums.txt` into a `mktemp -d` workdir (cleaned via `trap ... EXIT`), verification with `sha256sum --check --ignore-missing` (mismatch → exit 4, existing binary untouched), extraction, and atomic install via `install -m 755 crenein-agent /usr/local/bin/crenein-agent`; on success print the result of `/usr/local/bin/crenein-agent --version` and exit 0.
-- [~] 3.4 Lint the script with `shellcheck install.sh` and `bash -n install.sh`; fix all findings. _(bash -n pasa; shellcheck no instalable en este entorno sin sudo/red — pendiente correrlo, lo cubre además el CI si se agrega, o ejecutar localmente con shellcheck disponible.)_
+- [x] 3.4 Lint the script with `shellcheck install.sh` and `bash -n install.sh`; fix all findings. _(shellcheck v0.10.0 corrido: 0 findings; `bash -n` pasa. Único hallazgo era SC2317 sobre `cleanup` — falso positivo por invocación vía `trap EXIT`; silenciado con `# shellcheck disable=SC2317,SC2329` en install.sh.)_
 
 ## 4. CI Quality Gate
 

@@ -141,19 +141,27 @@ func buildInstalledDoc(t *testing.T) (status.Doc, bool, string) {
 	return doc, allRunning, warning
 }
 
+// fixedLastChecked is a deterministic "last checked" timestamp used by the
+// golden fixtures so the rendered timestamp stays stable across runs.
+const fixedLastChecked = "2026-06-17T12:00:00Z"
+
 // upToDateUpdatesInfo returns UpdatesInfo where both components are current.
 func upToDateUpdatesInfo() *status.UpdatesInfo {
+	lastChecked := fixedLastChecked
 	return &status.UpdatesInfo{
 		CLIVersion: "v0.1.0", CLILatest: "0.1.0", CLIUpdateAvailable: false,
 		AgentVersion: "1.8.3", AgentLatest: "1.8.3", AgentUpdateAvailable: false,
+		LastChecked: &lastChecked,
 	}
 }
 
 // updateAvailableInfo returns UpdatesInfo where agent 1.8.4 is available.
 func updateAvailableInfo() *status.UpdatesInfo {
+	lastChecked := fixedLastChecked
 	return &status.UpdatesInfo{
 		CLIVersion: "v0.1.0", CLILatest: "0.1.0", CLIUpdateAvailable: false,
 		AgentVersion: "1.8.3", AgentLatest: "1.8.4", AgentUpdateAvailable: true,
+		LastChecked: &lastChecked,
 	}
 }
 

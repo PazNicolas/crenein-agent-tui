@@ -94,7 +94,7 @@ BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
 # --- temp workdir, always cleaned up -----------------------------------------
 WORKDIR="$(mktemp -d)"
-# shellcheck disable=SC2329  # invoked indirectly via the EXIT trap below
+# shellcheck disable=SC2317,SC2329  # cleanup runs indirectly via the EXIT trap below
 cleanup() { rm -rf "${WORKDIR}"; }
 trap cleanup EXIT
 

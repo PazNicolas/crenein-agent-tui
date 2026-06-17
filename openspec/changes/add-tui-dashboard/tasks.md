@@ -57,5 +57,7 @@
 - [x] 8.3 Update wizard: simulated success run and simulated health-check failure showing rollback.
 - [x] 8.4 Doctor view: scripted check sequence with a warning and a failure; selection detail; re-run.
 - [x] 8.5 Logs view: scripted log stream; filter, pause/scroll, resume.
-- [ ] 8.6 Navigation and degradation: global keys, quit confirmation during a running operation, too-small screen, no-color goldens.
-- [ ] 8.7 Run `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`.
+- [x] 8.6 Navigation and degradation: global keys, quit confirmation during a running operation, too-small screen, no-color goldens.
+      — Added 5 root-level mono goldens (TestRootModelGoldenMono_{Status,Install,Update,Doctor,Logs}) in internal/tui/root_golden_test.go.
+- [x] 8.7 Run `gofmt -l .`, `go vet ./...`, `go build ./...`, `go test ./...`.
+      — All four gates pass: gofmt clean, vet clean, build clean, all tests green.

@@ -33,6 +33,10 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Lint install.sh (shellcheck)
+        # ubuntu-latest ships shellcheck pre-installed.
+        run: shellcheck install.sh
+
       - name: Test
         run: go test ./...
 

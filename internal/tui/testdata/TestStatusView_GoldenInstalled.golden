@@ -7,13 +7,14 @@
  influxdb    [OK]    running    influxdb:2.7                  2h       
  redis       [OK]    running    redis:7                       2h       
 
- Versions & Updates                   
-                                      
- CLI    : v0.1.0                      
- Agent  : 1.8.3 (health)              
-                                      
- Update indicators                    
-   CLI   : up-to-date                 
-   Agent : up-to-date                 
-                                      
-   Press u to open the Update wizard. 
+ Versions & Updates                    
+                                       
+ CLI    : v0.1.0                       
+ Agent  : 1.8.3 (health)               
+                                       
+ Update indicators                     
+   CLI   : up-to-date                  
+   Agent : up-to-date                  
+   Last checked : 2026-06-17T12:00:00Z 
+                                       
+   Press u to open the Update wizard.  

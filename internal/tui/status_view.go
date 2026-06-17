@@ -289,6 +289,7 @@ func (v statusView) renderVersionsPanel() string {
 		p.TitleStyle().Render("Update indicators"),
 		"  CLI   : " + v.updateIndicator("cli"),
 		"  Agent : " + v.updateIndicator("agent"),
+		"  Last checked : " + v.lastCheckedText(),
 	}
 
 	if v.updatesPhase != "waiting" && v.updatesPhase != "checking" {
@@ -331,6 +332,21 @@ func (v statusView) updateIndicator(component string) string {
 		return "up-to-date"
 	}
 	return "version check unavailable"
+}
+
+// lastCheckedText returns the cached "last checked" timestamp for the update
+// indicators. It reflects the same cached/TTL-respecting check that drives the
+// indicators (never a fresh GitHub call), and falls back to "never" when no
+// cached manifest is available.
+func (v statusView) lastCheckedText() string {
+	switch v.updatesPhase {
+	case "waiting", "checking":
+		return "checking…"
+	}
+	if v.updates != nil && v.updates.LastChecked != nil {
+		return *v.updates.LastChecked
+	}
+	return "never"
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

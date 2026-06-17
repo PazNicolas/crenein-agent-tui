@@ -15,5 +15,6 @@
  Update indicators                                       
    CLI   : up-to-date                                    
    Agent : update available → 1.8.4  (press u to update) 
+   Last checked : 2026-06-17T12:00:00Z                   
                                                          
    Press u to open the Update wizard.                    

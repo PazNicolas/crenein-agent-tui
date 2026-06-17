@@ -43,8 +43,8 @@
 
 - [x] 5.1 Wire `crenein-agent update` to resolve the target agent version, image tag, Mongo image, and notes from the manifest (replacing blind `:latest`) and pass them to the engine (`add-engine-detectors` owns execution).
 - [x] 5.2 Show release notes from the manifest in the update preview/confirmation (headless and TUI).
-- [ ] 5.3 Add "CLI update available" / "Agent update available" indicators to the TUI Status view (coordination with `add-tui-dashboard`), driven only by cached/TTL-respecting checks, with a "last checked" timestamp. _(bloqueado por add-tui-dashboard)_
-- [ ] 5.4 Ensure TUI rendering never triggers uncached GitHub API calls. _(bloqueado por add-tui-dashboard)_
+- [x] 5.3 Add "CLI update available" / "Agent update available" indicators to the TUI Status view (coordination with `add-tui-dashboard`), driven only by cached/TTL-respecting checks, with a "last checked" timestamp. _(internal/tui/status_view.go: `updateIndicator` + "Last checked" line via `lastCheckedText()`, surfacing `UpdatesInfo.LastChecked`)_
+- [x] 5.4 Ensure TUI rendering never triggers uncached GitHub API calls. _(verificado: `View()` es puro; las comprobaciones van por `FetchUpdatesInfo`→`FetchManifest(ctx, false)`, que respeta el TTL de 24h en disco)_
 
 ## 6. Validation And Release
 

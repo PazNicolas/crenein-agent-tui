@@ -1,0 +1,20 @@
+ crenein-agent v0.1.0 | Update 
+ Update Wizard — Version Preview                                                    
+                                                                                    
+     →                                                                              
+                                                                                    
+ What will be updated:                                                              
+   [OK]  agent  (crenein/c-network-agent-back:)                                     
+   [OK]  frontend  (crenein/c-network-agent-front:)                                 
+                                                                                    
+ What will NOT be touched:                                                          
+   —  mongodb  (database image unchanged)                                           
+   —  influxdb                                                                      
+   —  redis                                                                         
+   —  /data/*  (all persistent data is preserved)                                   
+                                                                                    
+ A backup of docker-compose.yml, .env, and image IDs will be created before update. 
+                                                                                    
+ Press  enter  or  y  to confirm and begin the update.                              
+ Press  esc  to cancel.                                                             
+ s:Status  i:Install  u:Update  d:Doctor  l:Logs  esc:Back  q:Quit 

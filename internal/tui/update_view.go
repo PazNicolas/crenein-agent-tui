@@ -487,7 +487,7 @@ func (v *updateView) renderResult() string {
 			lines = append(lines, "  1. Check container state:  docker compose ps")
 			lines = append(lines, "  2. Check agent logs:       docker compose logs agent")
 			if res.BackupPath != "" {
-				lines = append(lines, fmt.Sprintf("  3. Restore from backup:"))
+				lines = append(lines, "  3. Restore from backup:")
 				lines = append(lines, fmt.Sprintf("       cp %s/.env . && cp %s/docker-compose.yml .", res.BackupPath, res.BackupPath))
 				lines = append(lines, "       docker compose up -d")
 			}
